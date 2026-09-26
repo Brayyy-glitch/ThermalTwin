@@ -20,7 +20,7 @@ EXPOSE 8501
 # Streamlit Community Cloud's proxy or a local port-forward
 HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
 
-ENTRYPOINT ["streamlit", "run", "app.py", \
+ENTRYPOINT ["streamlit", "run", "code_files/app.py", \
     "--server.port=8501", \
     "--server.address=0.0.0.0", \
     "--server.headless=true", \
