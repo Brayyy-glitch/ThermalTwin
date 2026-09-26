@@ -71,6 +71,16 @@ SIGNATURE_NORMAL: str = "NORMAL"
 SIGNATURE_DRIFT: str = "DRIFT"
 SIGNATURE_JUMP: str = "JUMP"
 
+# =====================================================================
+# PRIVACY & POPIA EDGE HASHING CONFIGURATION
+# =====================================================================
+# Salt used for one-way SHA-256 worker identifier hashing at edge ingestion
+EDGE_HASH_SALT: str = "thermal_twin_edge_v1_2026"
+
+# Truncated hash length for anonymous worker tags (16 hex chars = 64-bit entropy)
+WORKER_HASH_LENGTH: int = 16
+
+
 
 # =====================================================================
 # 3. ICP STAGING & TARGET MINES (SINGLE SOURCE OF TRUTH)
