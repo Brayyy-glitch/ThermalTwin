@@ -19,9 +19,12 @@ documented energy poverty — the same wasted heat sits on both sides of that ga
   sensor's reported value diverges from what physics says it should be, that mismatch is flagged as
   possible tampering or hardware failure, and classified as a gradual `DRIFT` (calibration wear) or
   sudden `JUMP` (spoofing signature).
-- **Surface Engine** — a fence-line heat exchanger model and revenue calculator for selling a mine's
-  rejected heat to adjacent commercial partners (greenhouses, aquaculture), without altering the
-  mine's existing water treatment or cooling circuit.
+- **Surface Engine** — a fence-line heat exchanger model plus a two-sided digital front door: a
+  **Commercial Door** (available heat capacity, discount rate, mandatory local-hiring quota, 1-tap
+  tPPA interest) and a **Community Door** (plain-language hydroponic/aquaculture opportunity cards
+  for local youth, women, and citizens living with disabilities), proving Social and Labour Plan
+  (SLP) value has a visible path to the community — without altering the mine's existing water
+  treatment or cooling circuit.
 - **Privacy layer** — worker positioning is hashed one-way at ingestion; the platform only ever sees
   an anonymous zone occupancy count, never an identity (POPIA-aligned).
 
@@ -79,7 +82,9 @@ picks up live inside the running container (no rebuild needed); only changing
    chart diverge and the alert fire, tagged `JUMP` and ranked by worker occupancy.
 3. **Show the Z-score expander** — the statistical layer behind the alert.
 4. **Show the Data Privacy expander** — raw fake worker IDs going in, hashed tags coming out.
-5. **Surface Matchmaker** — adjust the sidebar heat/tariff inputs, show the fence-line revenue estimate.
+5. **Surface Engine Portal** — adjust the sidebar heat/tariff inputs, then scroll to the
+   Commercial Door / Community Door tabs and show the shared "Available Thermal Output vs.
+   Allocated Community Hubs" header — the live, two-sided proof of SLP value.
 
 ## What's simulated vs. real, stated plainly
 
@@ -95,7 +100,9 @@ picks up live inside the running container (no rebuild needed); only changing
 Supporting documents (not code): `ThermalTwin_Explained_Simply.pdf` (plain-language project overview),
 `ThermalTwin_Rebuttal_Prep.pdf` (anticipated judge questions and honest answers, including this
 project's open items), `Technical_Feasibility_Notes_OT_ICS_Anomaly_Detection.pdf` (background research
-on OT/ICS anomaly detection approaches).
+on OT/ICS anomaly detection approaches), and `SECURITY_AND_TRUST_NOTES.md` (PASTA threat-model
+mapping, security lifecycle, and the post-quantum-cryptography / "trusted 10 years from now" answers
+for the SSDLC and Data Privacy slide).
 
 A GitHub Actions workflow (`.github/workflows/docker-build.yml`) builds the Docker image and runs a
 smoke test (boots the container, polls Streamlit's health endpoint) on every push — see

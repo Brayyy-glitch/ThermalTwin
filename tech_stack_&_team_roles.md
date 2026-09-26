@@ -6,14 +6,14 @@
 |---|---|---|
 | **Data & Simulation** | `simulator.py`, `privacy.py` | Realistic telemetry generation, tamper-injection scenarios, worker-tag hashing |
 | **Analytics & Security** | `anomaly.py` | Rolling Z-score, drift/jump classification, worker-risk ranking, cross-sensor validation if time allows |
-| **Dashboard & Integration** | `app.py` | Wires everything together, UI/UX, Surface Matchmaker, ICP staging banner |
+| **Dashboard & Integration** | `app.py` | Wires everything together, UI/UX, Surface Engine Portal (Commercial + Community Doors), ICP staging banner |
 | **Narrative & Compliance** | `config.py`, slides, rebuttal prep, submission | Keeps deck and code in sync, owns Lean Canvas/SSDLC/Data Privacy slide, mentor liaison, final submission |
 
 `config.py` is deliberately the safest file for the Narrative & Compliance role to edit directly —
-it's just data (mine lists, depth bands, the wet-bulb constant), so last-minute wording changes
-never risk breaking the app. Everyone else's slides and claims should be checked against it, not
-restated from memory, so the deck and the code can't drift apart the way the Mponeng depth issue
-did earlier.
+it's just data (mine lists, depth bands, the wet-bulb constant, Surface Portal discount/quota
+numbers and community opportunity cards), so last-minute wording changes never risk breaking the
+app. Everyone else's slides and claims should be checked against it, not restated from memory, so
+the deck and the code can't drift apart the way the Mponeng depth issue did earlier.
 
 ## Tech stack — no paid API keys required
 
@@ -60,8 +60,11 @@ strength.
 - `simulator.py` — telemetry generator, tamper injection
 - `anomaly.py` — rolling Z-score, signature classification (DRIFT/JUMP), worker-risk ranking
 - `privacy.py` — SHA-256 worker ID hashing, zone occupancy density
-- `config.py` — Phase 1/Phase 2 ICP staging, wet-bulb safety constant
+- `config.py` — Phase 1/Phase 2 ICP staging, wet-bulb safety constant, Surface Portal data
+  (heat capacity, discount rate, hiring quota, community opportunity cards)
 - `app.py` — Streamlit dashboard tying it all together
 - `requirements.txt` — `streamlit`, `pandas`, `numpy`
 - `Dockerfile`, `.dockerignore`, `docker-compose.yml` — containerized run, cross-OS
 - `.github/workflows/docker-build.yml` — CI: build + smoke-test the container on every push
+- `SECURITY_AND_TRUST_NOTES.md` — PASTA threat model, security lifecycle, and PQC/crypto-agility
+  answers for the SSDLC/Data Privacy slide (Narrative & Compliance)
