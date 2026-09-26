@@ -959,6 +959,41 @@ def render_auth() -> None:
         else:
             _render_register_form()
 
+        # ── Guest access — community door only, no credentials needed ──
+        st.markdown(
+            """<div style="text-align:center;margin:18px 0 4px;">
+              <span style="font-size:0.85rem;color:#94A3B8;">
+                Looking for community opportunities?
+              </span>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+        if st.button(
+            "🌱 Continue as Guest — Community Door only",
+            use_container_width=True,
+            key="guest_btn",
+        ):
+            guest = {
+                "email": "guest",
+                "name": "Community Guest",
+                "account_type": "community",
+                "role": "community",
+                "mine": None,
+                "password": "",
+            }
+            st.session_state.authenticated = True
+            st.session_state.user = guest
+            st.rerun()
+
+        st.markdown(
+            """<div style="text-align:center;margin:4px 0 10px;">
+              <span style="font-size:0.78rem;color:#CBD5E1;">
+                No account needed · Community opportunities only · No mine data shown
+              </span>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+
         # Demo credentials hint
         with st.expander("🔑 Demo credentials (hackathon)"):
             st.markdown(
@@ -1281,7 +1316,69 @@ def render_underground_engine(selected_mine: str) -> None:
     zone_names = [s["zone"] for s in summaries]
     focus_zone = st.selectbox("Zone detail", zone_names)
     zone_df = df[df["zone"] == focus_zone].sort_values("timestamp").set_index("timestamp")
-    st.line_chart(zone_df[["reported_temp_c", "predicted_temp_c"]])
+
+    # ── 25-minute forecast (OLS linear extrapolation) ──
+    reported_series = zone_df["reported_temp_c"].tolist()
+    fc = simulator.forecast_zone_temperature(reported_series)
+
+    fc1, fc2, fc3 = st.columns(3)
+    fc_color = "#DC2626" if fc["is_breach_predicted"] else "#0D9488"
+    breach_label = (
+        f"⚠️ +{fc['breach_margin_c']:.1f}°C above limit"
+        if fc["is_breach_predicted"]
+        else f"✅ {abs(fc['breach_margin_c']):.1f}°C below limit"
+    )
+    fc1.metric(
+        f"Forecast wet-bulb in {fc['lead_minutes']} min",
+        f"{fc['forecast_wb_c']:.1f}°C",
+        delta=breach_label,
+        delta_color="inverse" if fc["is_breach_predicted"] else "normal",
+        help=f"Point forecast: {fc['forecast_temp_c']:.1f}°C ± {fc['sigma_c']:.2f}°C  "
+             f"(slope {fc['slope_c_per_min']:+.3f}°C/min, R²={fc['r_squared']:.2f})",
+    )
+    fc2.metric(
+        "Trend (°C / min)",
+        f"{fc['slope_c_per_min']:+.4f}",
+        help="Positive = heating up. Derived from OLS fit over last 10 samples.",
+    )
+    fc3.metric(
+        "Forecast ±1σ band",
+        f"{fc['lower_c']:.1f} – {fc['upper_c']:.1f}°C",
+        help="Uncertainty from the residual standard error of the linear fit.",
+    )
+
+    # Build chart: history + single forecast point with uncertainty
+    chart_df = zone_df[["reported_temp_c", "predicted_temp_c"]].copy()
+
+    # Append one row at t+25 min to show the forecast point on the chart
+    last_ts = chart_df.index[-1]
+    forecast_ts = last_ts + pd.Timedelta(minutes=fc["lead_minutes"])
+    forecast_row = pd.DataFrame(
+        {
+            "reported_temp_c": [None],
+            "predicted_temp_c": [None],
+            "forecast_temp_c": [fc["forecast_temp_c"]],
+            "forecast_upper_c": [fc["upper_c"]],
+            "forecast_lower_c": [fc["lower_c"]],
+        },
+        index=[forecast_ts],
+    )
+    # Extend history columns to match
+    chart_df["forecast_temp_c"] = None
+    chart_df["forecast_upper_c"] = None
+    chart_df["forecast_lower_c"] = None
+    chart_df = pd.concat([chart_df, forecast_row])
+
+    st.line_chart(
+        chart_df[["reported_temp_c", "predicted_temp_c",
+                  "forecast_temp_c", "forecast_upper_c", "forecast_lower_c"]],
+        color=["#EA580C", "#0D9488", "#DC2626", "#FCA5A5", "#FCA5A5"],
+    )
+    st.caption(
+        f"🔴 reported &nbsp; 🟢 predicted (physics baseline) &nbsp; "
+        f"🔴 dashed = {fc['lead_minutes']}-min forecast point &nbsp; "
+        f"(OLS over last {fc['samples_used']} samples, R²={fc['r_squared']:.2f})"
+    )
 
     st.markdown("**Worker-Risk Ranking** *(anonymous occupancy only)*")
     st.dataframe(
@@ -1527,18 +1624,80 @@ Deep gold mines spend heavily fighting naturally hot rock; a few hundred metres 
 Merafong households often can't afford to use the power they're connected to.
 ThermalTwin sits between the two:
 
-- **Underground Engine** — predicts dangerous heat 25–30 min ahead; the same physics
-  baseline doubles as a tamper-detection layer.
+- **Underground Engine** — predicts dangerous heat 25–30 min ahead using a live OLS
+  linear extrapolation over the last 10 sensor readings; the same physics baseline
+  doubles as a tamper-detection layer.
 - **Surface Engine** — routes heat already pumped to surface toward businesses
   (Commercial Door / tPPA) or community incubation projects (Community Door / SLP).
+- **Roadmap** — quantum sensing for order-of-magnitude precision improvements, and
+  quantum-enhanced ML for detecting adversarial drift invisible to classical models.
         """
     )
+
+    with st.expander("🛡️ Adversarial robustness — known attack vectors & mitigations"):
+        st.markdown(
+            """
+**The threat:** a sophisticated attacker who understands our detection thresholds can craft a
+slow drift that stays just below the `PHYSICS_MISMATCH_THRESHOLD_C` (1.5 °C) and the
+`Z_SCORE_ALERT_THRESHOLD` (2.5σ) indefinitely — making the heat risk invisible while the
+sensor reading slowly diverges from reality.
+
+**Current mitigations:**
+- **Cross-sensor spatial validation** (`validate_cross_sensors` in `anomaly.py`) — compares
+  each RTD probe against its physically adjacent neighbours. A zone whose temperature diverges
+  by more than `MAX_PLAUSIBLE_NEIGHBOR_DELTA_C` (3.5 °C) from all its neighbours is flagged
+  `LOCALIZED_PROBE_ANOMALY`, regardless of Z-score. A real thermal event would heat adjacent
+  zones too; a spoofed sensor is isolated by definition.
+- **DRIFT signature** — sustained sub-threshold divergence across `SIGNATURE_DRIFT_MIN_TIMESTEPS`
+  (3) consecutive samples is still classified and surfaced in the risk ranking, adding 15 points
+  to the composite score and triggering a Priority 2–3 alert.
+- **25-minute forecast** — the OLS slope detects an accelerating trend before it crosses the
+  statutory 28 °C wet-bulb limit, giving a window to act even if the absolute reading is
+  still nominally safe.
+
+**Remaining gap (honest):**
+A patient attacker could craft a ramp whose rate of change exactly matches the natural
+baseline drift. This requires knowing the mine's `vrt_celsius`, `depth_meters`, and
+our detection parameters — a high bar but not impossible. The roadmap mitigation is
+ensemble detection (multiple independent models with different thresholds) and
+eventually quantum-enhanced anomaly detection for sub-classical sensitivity.
+            """
+        )
+
+    with st.expander("🔒 Privacy — edge security assumption"):
+        st.markdown(
+            """
+**The claim:** "No PII is stored or transmitted" — this is true for the platform layer.
+Worker badge IDs are SHA-256 hashed with a salt at the edge before any data reaches
+the dashboard. The platform only ever sees an anonymous occupancy count.
+
+**The dependency:** this claim rests on the edge device being secure. In production,
+raw worker IDs do exist — briefly — at the sensor layer before hashing. If the edge
+device is physically compromised or its firmware is tampered with, raw IDs could be
+extracted before hashing occurs.
+
+**Mitigations in the roadmap:**
+- Edge devices should run in a Trusted Execution Environment (TEE / secure enclave)
+  so the hash operation itself cannot be observed or bypassed.
+- The salt (`EDGE_HASH_SALT` in `config.py`) must be rotated periodically and stored
+  in a hardware security module (HSM) at the edge, not in plaintext config.
+- Tamper-evident hardware seals and remote attestation for edge firmware integrity.
+            """
+        )
+
     with st.expander("💬 Honest caveats"):
         st.markdown(
             """
 - Telemetry is **simulated** — the "predicted" baseline is scripted physics, not a trained ML model.
-- Phase 1 (chilled water mines); Phase 2 (Mponeng, TauTona) needs ice-brine heat-exchanger design.
-- The claim about OT-security vendors under-serving mid-tier SA mines is unverified.
+- The 25-minute forecast uses **OLS linear extrapolation** over the last 10 samples — a real
+  deployment would train a time-series model on historical shift data.
+- Phase 1 (chilled water mines); Phase 2 (Mponeng, TauTona) needs an ice-brine heat-exchanger
+  design before the Surface Engine is applicable.
+- Cross-sensor spatial validation (`validate_cross_sensors`) **is implemented** in `anomaly.py`
+  but is not yet wired into the live dashboard alert pipeline — it runs as a standalone
+  function. Wiring it to the per-zone alert is the next engineering task.
+- The claim about OT-security vendors under-serving mid-tier SA mines is our belief,
+  not yet confirmed with an industry source.
             """
         )
 

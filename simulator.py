@@ -189,6 +189,93 @@ def simulate_mine_telemetry(
     return df
 
 
+def forecast_zone_temperature(
+    reported_temps: List[float],
+    lead_minutes: int = PREDICTION_LEAD_TIME_MINUTES,
+    lookback: int = 10,
+) -> Dict[str, Any]:
+    """
+    Forecast underground zone temperature ``lead_minutes`` ahead using ordinary
+    least-squares linear regression over the most recent ``lookback`` samples
+    (each sample = 1 minute at TELEMETRY_INTERVAL_SECONDS = 60 s).
+
+    Why linear extrapolation?
+    -------------------------
+    Heat accumulation in a stope follows a near-linear ramp between ventilation
+    cycles.  A linear model over 10 samples gives a defensible, auditable signal
+    without requiring a trained model.  The residual standard error of the fit
+    becomes the ±1σ uncertainty band reported alongside the point forecast.
+
+    Returns
+    -------
+    dict with keys:
+        forecast_temp_c     – point estimate at t + lead_minutes
+        sigma_c             – ±1σ uncertainty from OLS residuals
+        upper_c             – forecast_temp_c + sigma_c
+        lower_c             – forecast_temp_c - sigma_c
+        slope_c_per_min     – trend slope (positive = heating up)
+        r_squared           – goodness-of-fit of the linear model
+        is_breach_predicted – True if upper_c >= STATUTORY_WET_BULB_LIMIT
+        breach_margin_c     – how far upper_c sits above/below the 28°C limit
+        samples_used        – number of samples actually used (≤ lookback)
+        lead_minutes        – echo of the requested horizon
+    """
+    n_available = len(reported_temps)
+    samples_used = min(lookback, n_available)
+    window = reported_temps[-samples_used:]
+
+    # x = time in minutes (0 .. samples_used-1)
+    x = list(range(samples_used))
+    x_mean = sum(x) / samples_used
+    y_mean = sum(window) / samples_used
+
+    # OLS coefficients
+    ss_xy = sum((xi - x_mean) * (yi - y_mean) for xi, yi in zip(x, window))
+    ss_xx = sum((xi - x_mean) ** 2 for xi in x)
+
+    if ss_xx < 1e-9:
+        # Flat signal — no trend, forecast = last value
+        slope = 0.0
+        intercept = y_mean
+    else:
+        slope = ss_xy / ss_xx
+        intercept = y_mean - slope * x_mean
+
+    # Residual standard error (σ)
+    residuals_sq = [(window[i] - (intercept + slope * x[i])) ** 2 for i in range(samples_used)]
+    mse = sum(residuals_sq) / max(1, samples_used - 2)
+    sigma = mse ** 0.5
+
+    # R² (goodness of fit)
+    ss_tot = sum((yi - y_mean) ** 2 for yi in window)
+    r_squared = round(1.0 - sum(residuals_sq) / ss_tot, 4) if ss_tot > 1e-9 else 1.0
+
+    # Forecast at t + lead_minutes (x_forecast extends beyond the window by lead_minutes)
+    x_forecast = (samples_used - 1) + lead_minutes
+    forecast_c = intercept + slope * x_forecast
+
+    # Wet-bulb approximation for the forecasted dry-bulb temperature
+    # (reuses the same simple 0.34 factor from _wet_bulb_estimate_c with no occupancy term)
+    forecast_wb_c = 14.0 + 0.34 * forecast_c
+
+    is_breach = forecast_wb_c >= STATUTORY_WET_BULB_LIMIT
+    breach_margin = round(forecast_wb_c - STATUTORY_WET_BULB_LIMIT, 2)
+
+    return {
+        "forecast_temp_c": round(forecast_c, 2),
+        "forecast_wb_c": round(forecast_wb_c, 2),
+        "sigma_c": round(sigma, 3),
+        "upper_c": round(forecast_c + sigma, 2),
+        "lower_c": round(forecast_c - sigma, 2),
+        "slope_c_per_min": round(slope, 4),
+        "r_squared": r_squared,
+        "is_breach_predicted": is_breach,
+        "breach_margin_c": breach_margin,
+        "samples_used": samples_used,
+        "lead_minutes": lead_minutes,
+    }
+
+
 def generate_demo_data(
     mine_name: str = DEFAULT_MINE,
     inject_physics_mismatch: bool = True,

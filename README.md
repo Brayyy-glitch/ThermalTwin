@@ -94,8 +94,11 @@ picks up live inside the running container (no rebuild needed); only changing
 - The "predicted" temperature is a scripted physics-based baseline, not a trained ML model.
 - Telemetry ingestion is a direct function call in this build, not a running MQTT/Modbus pipeline —
   see `TEAM_AND_STACK.md` for what that would take to make literally true.
-- Cross-sensor validation (comparing neighbouring RTD sensors) is part of the target user journey but
-  not yet implemented — only per-zone rolling Z-score is live.
+- Cross-sensor validation (`validate_cross_sensors` in `anomaly.py`) **is implemented** — it
+  compares adjacent RTD probes and flags `LOCALIZED_PROBE_ANOMALY` when a single zone diverges
+  by more than `MAX_PLAUSIBLE_NEIGHBOR_DELTA_C` (3.5 °C) from its neighbours while they agree.
+  It is not yet wired into the live per-zone alert pipeline in the dashboard; that is the next
+  engineering task. Only per-zone rolling Z-score currently drives the live alerts.
 
 Supporting documents (not code): `ThermalTwin_Explained_Simply.pdf` (plain-language project overview),
 `ThermalTwin_Rebuttal_Prep.pdf` (anticipated judge questions and honest answers, including this
