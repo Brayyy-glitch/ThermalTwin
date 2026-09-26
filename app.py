@@ -29,7 +29,7 @@ import simulator
 
 st.set_page_config(
     page_title="ThermalTwin — MineFlow AI",
-    page_icon="🌡️",
+    page_icon=":thermometer:",
     layout="wide",
 )
 
@@ -241,7 +241,7 @@ def build_zone_summaries(df: pd.DataFrame) -> list:
 # SCREEN 1: UNDERGROUND ENGINE (safety)
 # ---------------------------------------------------------------------
 def render_underground_engine(selected_mine: str) -> None:
-    st.subheader("🔻 Underground Engine — Predictive Safety & Security")
+    st.subheader("Underground Engine — Predictive Safety & Security")
     st.caption(
         f"Predicts a dangerous heat spike ~{config.PREDICTION_LEAD_TIME_MINUTES} minutes ahead of time, "
         "and doubles as a tamper-detection layer using the same physics baseline."
@@ -260,7 +260,7 @@ def render_underground_engine(selected_mine: str) -> None:
             horizontal=True,
             help="JUMP = sudden spoofing step. DRIFT = gradual sensor wear/calibration decay.",
         )
-        if st.button("🔄 Regenerate telemetry"):
+        if st.button("Regenerate telemetry"):
             st.session_state.telemetry_cache = {}
             st.rerun()
 
@@ -270,11 +270,11 @@ def render_underground_engine(selected_mine: str) -> None:
     with info_col:
         top = summaries[0]
         if top["priority"].startswith("Priority 1"):
-            st.error(f"🚨 {top['zone']}: {top['priority']} — {top['recommended_action']}")
+            st.error(f"ALERT: {top['zone']}: {top['priority']} — {top['recommended_action']}")
         elif top["priority"].startswith("Priority 2"):
-            st.warning(f"⚠️ {top['zone']}: {top['priority']} — {top['recommended_action']}")
+            st.warning(f"WARNING: {top['zone']}: {top['priority']} — {top['recommended_action']}")
         else:
-            st.success(f"✅ All zones nominal. Highest priority: {top['zone']} ({top['priority']}).")
+            st.success(f"All zones nominal. Highest priority: {top['zone']} ({top['priority']}).")
 
     zone_names = [s["zone"] for s in summaries]
     focus_zone = st.selectbox("Zone detail", zone_names, index=0)
@@ -298,7 +298,7 @@ def render_underground_engine(selected_mine: str) -> None:
     )
     st.dataframe(ranking_table, use_container_width=True, hide_index=True)
 
-    with st.expander("🔒 Data Privacy — how worker counts are produced"):
+    with st.expander("Data Privacy — how worker counts are produced"):
         sample_ids = [f"{focus_zone.replace(' ', '').upper()}-{i}" for i in range(6)]
         hashed = privacy.hash_worker_ids(sample_ids)
         st.write("Raw badge IDs never leave the sensor layer. Example (illustrative only):")
@@ -310,7 +310,7 @@ def render_underground_engine(selected_mine: str) -> None:
 # SCREEN 2: COMMERCIAL DOOR
 # ---------------------------------------------------------------------
 def render_commercial_door(selected_mine: str) -> None:
-    st.subheader("🏭 Commercial Door — Thermal Power Purchase Agreement (tPPA)")
+    st.subheader("Commercial Door — Thermal Power Purchase Agreement (tPPA)")
     mine_cfg = config.get_mine_config(selected_mine)
     cfg = config.COMMERCIAL_DOOR_CONFIG
 
@@ -343,7 +343,7 @@ def render_commercial_door(selected_mine: str) -> None:
                 st.error("Please provide a company name and contact email.")
 
     if st.session_state.commercial_interests:
-        with st.expander(f"📋 Express Interest submissions ({len(st.session_state.commercial_interests)})"):
+        with st.expander(f"Express Interest submissions ({len(st.session_state.commercial_interests)})"):
             st.dataframe(pd.DataFrame(st.session_state.commercial_interests), use_container_width=True, hide_index=True)
 
 
@@ -351,7 +351,7 @@ def render_commercial_door(selected_mine: str) -> None:
 # SCREEN 3: COMMUNITY DOOR
 # ---------------------------------------------------------------------
 def render_community_door() -> None:
-    st.subheader("🌱 Community Door — Incubation Opportunities")
+    st.subheader("Community Door — Incubation Opportunities")
     st.caption("Plain-language opportunities for local youth, women, and persons living with disabilities — no private off-taker required.")
 
     cards = config.get_community_cards()
@@ -381,7 +381,7 @@ def render_community_door() -> None:
                             st.error("Please enter your name.")
 
     if st.session_state.community_applications:
-        with st.expander(f"📋 Applications received ({len(st.session_state.community_applications)})"):
+        with st.expander(f"Applications received ({len(st.session_state.community_applications)})"):
             st.dataframe(pd.DataFrame(st.session_state.community_applications), use_container_width=True, hide_index=True)
 
 
@@ -389,7 +389,7 @@ def render_community_door() -> None:
 # SCREEN 4: ICP / ABOUT
 # ---------------------------------------------------------------------
 def render_about() -> None:
-    st.subheader("ℹ️ About ThermalTwin (MineFlow AI)")
+    st.subheader("About ThermalTwin (MineFlow AI)")
     st.markdown(
         """
 Deep gold mines spend heavily to fight naturally hot rock underground; a few hundred metres away,
@@ -422,7 +422,7 @@ between the two:
 def main() -> None:
     inject_theme()
     render_staging_banner()
-    st.title("🌡️ ThermalTwin — MineFlow AI")
+    st.title("ThermalTwin — MineFlow AI")
 
     phase1_mines = config.get_mines_by_phase(1)
     selected_mine = st.sidebar.selectbox("Active mine (Phase 1 demo)", phase1_mines, index=phase1_mines.index(config.DEFAULT_MINE))
@@ -433,7 +433,7 @@ def main() -> None:
     render_status_header(selected_mine)
     st.markdown("---")
 
-    tab1, tab2, tab3, tab4 = st.tabs(["🔻 Underground Engine", "🏭 Commercial Door", "🌱 Community Door", "ℹ️ About"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Underground Engine", "Commercial Door", "Community Door", "About"])
     with tab1:
         render_underground_engine(selected_mine)
     with tab2:
