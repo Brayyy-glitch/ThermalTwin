@@ -114,3 +114,61 @@ smoke test (boots the container, polls Streamlit's health endpoint) on every pus
   mines is still unverified — this is the single highest-risk unconfirmed assumption in the pitch.
 - No confirmed real-world contact or quote from a Carletonville-area mine or resident yet.
 - Final funding figure for the Lean Canvas/pitch ask is not yet locked in.
+
+
+---
+
+## Dashboard term glossary
+
+### Underground Engine
+
+The safety monitoring screen. Watches sensor readings from underground zones and flags heat danger or sensor tampering.
+
+| Term | What it means |
+|---|---|
+| **Inject sensor tampering** | A demo toggle that simulates a bad actor (or a broken sensor) sending false temperature data underground |
+| **Tamper signature: JUMP** | The fake temperature spikes suddenly — like someone injecting a false reading all at once (spoofing signature) |
+| **Tamper signature: DRIFT** | The fake temperature creeps up slowly over several readings — like a sensor slowly losing calibration |
+| **Reported temp °C** | What the sensor is actually sending back from underground |
+| **Predicted temp °C** | What physics says the temperature *should* be, based on known rock temperature, depth, and airflow |
+| **Wet-Bulb °C** | The heat-humidity combination that determines when human bodies overheat. SA law (MHSA) says work must stop above **28°C wet-bulb** |
+| **Priority 1 / Priority 2** | Risk ranking — Priority 1 is the most urgent zone requiring immediate action |
+| **Composite Risk Score** | A number combining: how far the wet-bulb is from the 28°C limit + how many workers are in the zone + how severe the anomaly is |
+| **Signature (NORMAL / DRIFT / JUMP)** | The anomaly type the system has classified for that zone |
+| **Recommended Action** | What the system says should happen — e.g. redirect ventilation or evacuate |
+| **Anonymous Workers** | How many people are in the zone — shown as a count only, never names (POPIA-aligned) |
+| **Data Privacy expander** | Shows how worker badge IDs are one-way hashed (scrambled) at the sensor so the platform never sees who is where, only *how many* |
+
+### Commercial Door
+
+For businesses that want to buy the waste heat the mine pumps to the surface via a **tPPA (thermal Power Purchase Agreement)**.
+
+| Term | What it means |
+|---|---|
+| **Fence-line Capacity (MWth)** | The total megawatts of thermal energy available at the mine's boundary — e.g. Driefontein has 14.5 MWth |
+| **Tariff Discount (25% below Eskom)** | The buyer pays 25% less than the standard Eskom industrial electricity rate for this heat |
+| **Mandatory Local Hiring Quota (60%)** | Any business that buys the heat must hire at least 60% of its workforce from the local community — baked into the contract |
+| **Eskom baseline tariff** | The standard SA industrial electricity price (R2.15/kWh) used as the comparison point |
+| **tPPA (thermal Power Purchase Agreement)** | A 5-year contract where a business pays the mine for heat instead of paying Eskom for electricity to generate that same heat themselves |
+| **Heat capacity slider (MWth)** | Select how many megawatts of heat to secure — the savings and revenue figures update live |
+| **Your est. annual savings** | How much the off-taker (buyer) saves per year versus paying Eskom for equivalent energy |
+| **Mine's est. annual revenue** | How much the mine earns annually from this deal |
+| **Express Interest** | A one-tap form to register intent — no sign-in, no backend, session record only for demo purposes |
+
+### Community Door
+
+For local residents, youth cooperatives, and small enterprises. When no commercial buyer takes the heat, it powers community incubation projects instead.
+
+| Term | What it means |
+|---|---|
+| **Heat Allocated (MWth)** | How many megawatts of thermal energy that specific project uses — drawn from the mine's surplus |
+| **Water Temp** | The temperature range of the warm water delivered to the project — each use case needs a different range (e.g. aquaculture needs 26–28°C, drying needs 40–50°C) |
+| **Jobs Created** | Direct and seasonal employment the project is expected to generate in the local community |
+| **SLP metric** | Social and Labour Plan metric — the measurable community benefit the mine must prove to its regulator; each card shows what it contributes |
+| **Focus group** | Who the opportunity is specifically designed for (e.g. local youth & women, youth cooperatives & persons with disabilities) |
+| **RAS (Recirculating Aquaculture System)** | The fish farming method used in the tilapia card — water circulates in a closed loop at a controlled temperature |
+| **Apply — 1 step** | A simple form to register interest in that opportunity — name only, no backend |
+
+### How the three sections connect
+
+The mine generates heat underground → the **Underground Engine** predicts and monitors it → surplus heat reaches the surface → the **Commercial Door** gives businesses first pick → the **Community Door** captures everything unallocated. The live gauge bar at the top of the dashboard shows exactly how much of the available thermal output is allocated at any moment.
