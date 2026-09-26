@@ -1,0 +1,12 @@
+services:
+  thermaltwin:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      # Live-reload: local edits to .py files show up without a rebuild.
+      # Compose resolves this path correctly on Linux, macOS, and Windows —
+      # no $(pwd) / %cd% shell differences to worry about.
+      - .:/app
+    environment:
+      - PYTHONUNBUFFERED=1

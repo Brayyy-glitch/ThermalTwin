@@ -54,10 +54,22 @@ full (free/open-source) tech stack, including stretch-goal options like real MQT
 
 ## Running it
 
+**Option A — local venv:**
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
+
+**Option B — Docker (recommended for cross-machine consistency):**
+```bash
+docker compose up --build
+```
+Then open `http://localhost:8501`. Works identically on Linux, macOS, and Windows —
+the container always runs a Linux base image regardless of host OS, so there's no
+"works on my machine" drift between the four of us. Editing any `.py` file locally
+picks up live inside the running container (no rebuild needed); only changing
+`requirements.txt` requires a `docker compose up --build` re-run. See
+`TEAM_AND_STACK.md` for the full Docker/CI setup.
 
 ## Demo script (~3 minutes)
 
@@ -84,6 +96,10 @@ Supporting documents (not code): `ThermalTwin_Explained_Simply.pdf` (plain-langu
 `ThermalTwin_Rebuttal_Prep.pdf` (anticipated judge questions and honest answers, including this
 project's open items), `Technical_Feasibility_Notes_OT_ICS_Anomaly_Detection.pdf` (background research
 on OT/ICS anomaly detection approaches).
+
+A GitHub Actions workflow (`.github/workflows/docker-build.yml`) builds the Docker image and runs a
+smoke test (boots the container, polls Streamlit's health endpoint) on every push — see
+`TEAM_AND_STACK.md`.
 
 ## Open items
 

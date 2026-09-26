@@ -33,9 +33,24 @@ did earlier.
 - `paho-mqtt` + a local `Mosquitto` broker — the MQTT layer
 - `Zeek` — sniffs the simulated traffic for a real protocol log, adds network-monitoring credibility
 
+### Containerization & CI (free, no registry account needed)
+- **Docker** — `Dockerfile` + `.dockerignore` at repo root. Builds a `python:3.11-slim` image,
+  installs `requirements.txt`, runs `streamlit run app.py`. Identical behavior on Ubuntu, macOS, and
+  Windows hosts, since the container always runs Linux underneath regardless of the host OS —
+  eliminates "works on my machine" during demo prep.
+- **Docker Compose** (`docker-compose.yml`) — collapses `docker build` + `docker run -p -v` into
+  one command (`docker compose up --build`); mounts the repo into the container so local `.py` edits
+  show up without a rebuild.
+- **GitHub Actions** (`.github/workflows/docker-build.yml`, free on public/most private repos) —
+  on every push: builds the image, boots it, polls Streamlit's `/_stcore/health` endpoint as a smoke
+  test, then tears the container down. Runs on GitHub's hosted `ubuntu-latest` runner — that's just
+  where the CI job itself executes, unrelated to what OS any of us develops on locally. Does not yet
+  push the image to a registry (Docker Hub / GHCR); that's a stretch add if we want it.
+
 ### Collaboration & deployment
 - **GitHub** (free) — shared repo instead of passing files by hand
-- **Streamlit Community Cloud** (free) — optional one-click hosting for a live demo link
+- **Streamlit Community Cloud** (free) — optional one-click hosting for a live demo link; builds
+  from `requirements.txt` directly and does not use the Dockerfile
 
 Zero external dependencies require billing setup, a paid tier, or a rate-limited API key under
 demo pressure — worth stating explicitly on the Technical Architecture slide as a feasibility
@@ -48,3 +63,5 @@ strength.
 - `config.py` — Phase 1/Phase 2 ICP staging, wet-bulb safety constant
 - `app.py` — Streamlit dashboard tying it all together
 - `requirements.txt` — `streamlit`, `pandas`, `numpy`
+- `Dockerfile`, `.dockerignore`, `docker-compose.yml` — containerized run, cross-OS
+- `.github/workflows/docker-build.yml` — CI: build + smoke-test the container on every push
