@@ -1,20 +1,11 @@
+# -*- coding: utf-8 -*-
 """
 ThermalTwin (MineFlow AI) — Dashboard & Integration
 ====================================================
-Role: Dashboard & Integration (app.py)
-
-Wires together:
-  - simulator.py -> synthetic underground telemetry (per mine/zone)
-  - anomaly.py -> rolling Z-score, physics-mismatch, DRIFT/JUMP signatures, worker-risk ranking
-  - privacy.py -> POPIA-safe worker-tag hashing / anonymous occupancy counts
-  - config.py -> single source of truth for mines, thresholds, Surface Engine Portal data
-
-Screens (the 5-screen two-sided portal, no backend, no login):
-  1. Underground Engine — live safety telemetry, tamper injection, worker-risk ranking
-  2. Commercial Door — fence-line heat capacity, tPPA "Express Interest"
-  3. Community Door — incubation opportunity cards, stepped 1-decision-per-screen apply flow
-  4. Live Status Header — Available Thermal Output vs Allocated Community Hubs (always visible)
-  5. ICP / About — problem, solution, honest caveats for judges
+Role-based access:
+  - Mining Business / Manager  → all 4 tabs (Underground + Commercial + Community + About)
+  - Mining Business / Operator → Underground Engine + About only
+  - Community Member           → Community Door only (simplified, accessible view)
 
 Run with: streamlit run app.py
 """
@@ -29,16 +20,43 @@ import simulator
 
 st.set_page_config(
     page_title="ThermalTwin — MineFlow AI",
-    page_icon=":thermometer:",
+    page_icon="🌡️",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
+# =====================================================================
+# 1. USER STORE  (demo-only, in-memory — replace with a DB in production)
+# =====================================================================
+# Structure: { email: { password, name, account_type, role } }
+# account_type: "mining" | "community"
+# role (mining only): "manager" | "operator"
+DEMO_USERS: dict = {
+    "manager@thermaltwin.co.za": {
+        "password": "manager123",
+        "name": "Thabo Nkosi",
+        "account_type": "mining",
+        "role": "manager",
+        "mine": "Driefontein",
+    },
+    "operator@thermaltwin.co.za": {
+        "password": "operator123",
+        "name": "Lerato Dlamini",
+        "account_type": "mining",
+        "role": "operator",
+        "mine": "Driefontein",
+    },
+    "community@merafong.co.za": {
+        "password": "community123",
+        "name": "Nompumelelo Sithole",
+        "account_type": "community",
+        "role": "community",
+        "mine": None,
+    },
+}
 
 # =====================================================================
-# MULTILINGUAL STRING TABLE
-# Four languages spoken in the Merafong / Carletonville area.
-# All community-facing copy goes through this table so a translator only
-# ever edits one dictionary — no code changes needed.
+# 2. MULTILINGUAL STRING TABLE (Community Door)
 # =====================================================================
 LANG_STRINGS: dict = {
     "English": {
@@ -63,9 +81,8 @@ LANG_STRINGS: dict = {
         "whatsapp_number": "+27 18 788 1234",
         "whatsapp_contact": "Sifiso (Community Desk, Merafong)",
         "offline_note": "📶 This page works on slow data. No videos or heavy images.",
-        "before_label": "Before (cost)",
+        "before_label": "Before",
         "after_label": "After (free heat)",
-        "jobs_icon": "👩‍🌾",
         "listen_tooltip": "Listen",
     },
     "isiZulu": {
@@ -90,9 +107,8 @@ LANG_STRINGS: dict = {
         "whatsapp_number": "+27 18 788 1234",
         "whatsapp_contact": "USifiso (Idesiki Lomphakathi, Merafong)",
         "offline_note": "📶 Lekhasi lisebenza ngisho nangedatha engolangolanyo.",
-        "before_label": "Ngaphambi (intengo)",
+        "before_label": "Ngaphambi",
         "after_label": "Ngemuva (ukufudumala kwamahhala)",
-        "jobs_icon": "👩‍🌾",
         "listen_tooltip": "Lalela",
     },
     "Setswana": {
@@ -117,9 +133,8 @@ LANG_STRINGS: dict = {
         "whatsapp_number": "+27 18 788 1234",
         "whatsapp_contact": "Sifiso (Tafole ya Setšhaba, Merafong)",
         "offline_note": "📶 Tsebe eno e a dira le mo go simologileng data.",
-        "before_label": "Pele (tshenyegelo)",
+        "before_label": "Pele",
         "after_label": "Morago (bothitho jo bo sa duelelweng)",
-        "jobs_icon": "👩‍🌾",
         "listen_tooltip": "Reetsa",
     },
     "Afrikaans": {
@@ -144,296 +159,623 @@ LANG_STRINGS: dict = {
         "whatsapp_number": "+27 18 788 1234",
         "whatsapp_contact": "Sifiso (Gemeenskapstafel, Merafong)",
         "offline_note": "📶 Hierdie bladsy werk op stadige data. Geen videos of swaar beelde nie.",
-        "before_label": "Voor (koste)",
+        "before_label": "Voor",
         "after_label": "Na (gratis hitte)",
-        "jobs_icon": "👩‍🌾",
         "listen_tooltip": "Luister",
     },
 }
 
-# Per-card icon and a one-line benefit string (language-neutral where possible)
 CARD_META: dict = {
     "merafong_hydroponics": {
         "icon": "🥬",
-        "icon_label": "Hydroponics / Vegetables",
         "benefit_en": "Grow vegetables all year — no winter heating bill.",
         "benefit_zu": "Ukukhula kwemifino unyaka wonke — ngaphandle kwezindleko zokufudumeza.",
         "benefit_tn": "Godisa merogo ka mokgabo wotlhe — ga go na tefelo ya bothitho.",
         "benefit_af": "Groente die hele jaar — geen verwarmingsrekening nie.",
-        "color": "#59C97A",
+        "color": "#16A34A",
+        "bg": "#F0FDF4",
+        "border": "#BBF7D0",
     },
     "tilapia_aquaculture": {
         "icon": "🐟",
-        "icon_label": "Fish Farming",
         "benefit_en": "Farm fish in warm water — no fuel needed.",
         "benefit_zu": "Ukufuya izinhlanzi emanzini afudumele — ngaphandle kwamafutha.",
         "benefit_tn": "Allela ditlhapi mo metsing a bothitho — ga go a tlhokagala metsi a mafutha.",
         "benefit_af": "Teelvis in warm water — geen brandstof nodig nie.",
-        "color": "#3FC6D1",
+        "color": "#0369A1",
+        "bg": "#F0F9FF",
+        "border": "#BAE6FD",
     },
     "post_harvest_drying": {
         "icon": "🌾",
-        "icon_label": "Crop Drying",
         "benefit_en": "Dry your harvest with free heat — stop food going to waste.",
         "benefit_zu": "Omisa isivuno sakho ngokufudumala kwamahhala — misa ukuchithwa kokudla.",
         "benefit_tn": "Omisa selelo sa gago ka bothitho jo bo sa duelelweng — emisa dijo go senyiwa.",
         "benefit_af": "Droog jou oes met gratis hitte — stop voedselvermorsing.",
-        "color": "#FF8A3D",
+        "color": "#B45309",
+        "bg": "#FFFBEB",
+        "border": "#FDE68A",
     },
     "sanitation_laundry": {
         "icon": "🧺",
-        "icon_label": "Laundry & Hot Water",
         "benefit_en": "Hot water for laundry and clinics — no coal, no paraffin.",
         "benefit_zu": "Amanzi ashisayo okuhlanza namakhliniki — ngaphandle komalahle, ngaphandle kwe-paraffin.",
         "benefit_tn": "Metsi a bothitho a go tlhapa le dikiliniki — ga go makhala, ga go paraffin.",
         "benefit_af": "Warm water vir wasserye en klinieke — geen steenkool, geen paraffien nie.",
-        "color": "#B57FFF",
+        "color": "#7C3AED",
+        "bg": "#FAF5FF",
+        "border": "#DDD6FE",
     },
 }
 
-
 # =====================================================================
-# VISUAL IDENTITY — control-room theme, not default SaaS grey.
-# Amber = heat/thermal, cyan = safety/commercial, green = nominal/community.
-# Community Door gets larger touch targets and bigger base font.
+# 3. THEME  —  bright light mode, vivid accent colours
 # =====================================================================
 def inject_theme() -> None:
     st.markdown(
         """
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
+        /* ── Colour tokens ── */
         :root {
-          --tt-bg: #12181C;
-          --tt-panel: #182027;
-          --tt-border: #2B363D;
-          --tt-text: #E8ECEE;
-          --tt-muted: #8FA0A8;
-          --tt-amber: #FF8A3D;
-          --tt-cyan: #3FC6D1;
-          --tt-green: #59C97A;
-          --tt-red: #E5484D;
-          --tt-purple: #B57FFF;
+          --bg:          #F8FAFC;
+          --surface:     #FFFFFF;
+          --card:        #FFFFFF;
+          --border:      #E2E8F0;
+          --border-hi:   #CBD5E1;
 
-          /* Community Door sizing — larger for low-literacy / small screens */
-          --cd-font-size: 1.08rem;
+          --text:        #0F172A;
+          --text-sec:    #475569;
+          --muted:       #94A3B8;
+
+          /* Vivid brand palette */
+          --orange:      #EA580C;
+          --orange-lo:   #FFF7ED;
+          --orange-mid:  #FED7AA;
+          --teal:        #0D9488;
+          --teal-lo:     #F0FDFA;
+          --teal-mid:    #99F6E4;
+          --green:       #16A34A;
+          --green-lo:    #F0FDF4;
+          --green-mid:   #BBF7D0;
+          --red:         #DC2626;
+          --red-lo:      #FEF2F2;
+          --blue:        #2563EB;
+          --blue-lo:     #EFF6FF;
+          --purple:      #7C3AED;
+          --purple-lo:   #FAF5FF;
+          --amber:       #D97706;
+          --amber-lo:    #FFFBEB;
+
+          --r-sm:  6px;
+          --r-md:  10px;
+          --r-lg:  16px;
+          --r-xl:  24px;
+          --shadow-sm: 0 1px 3px rgba(15,23,42,0.08), 0 1px 2px rgba(15,23,42,0.06);
+          --shadow-md: 0 4px 12px rgba(15,23,42,0.10), 0 2px 4px rgba(15,23,42,0.06);
+          --shadow-lg: 0 10px 30px rgba(15,23,42,0.12), 0 4px 8px rgba(15,23,42,0.06);
+
           --cd-icon-size: 3.2rem;
-          --cd-btn-padding: 18px 0;
-          --cd-radius: 10px;
-          --cd-touch-min: 56px;
+          --cd-radius:    14px;
+          --cd-touch-min: 52px;
         }
 
-        html, body, [class*="css"] { font-family: 'Inter', sans-serif; color: var(--tt-text); }
-        .stApp { background-color: var(--tt-bg); }
-
-        h1, h2, h3, h4, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
-          font-family: 'Oswald', sans-serif !important;
-          letter-spacing: 0.02em;
-          color: var(--tt-text);
+        /* ── Reset & base ── */
+        html, body, [class*="css"] {
+          font-family: 'Plus Jakarta Sans', sans-serif !important;
+          color: var(--text) !important;
+          font-size: 15px;
+          line-height: 1.65;
         }
+        .stApp { background-color: var(--bg) !important; }
 
-        [data-testid="stSidebar"] { background-color: var(--tt-panel); border-right: 1px solid var(--tt-border); }
+        /* ── Headings ── */
+        h1,h2,h3,h4,
+        .stMarkdown h1,.stMarkdown h2,.stMarkdown h3,.stMarkdown h4 {
+          font-family: 'Space Grotesk', sans-serif !important;
+          font-weight: 700 !important;
+          color: var(--text) !important;
+          letter-spacing: -0.015em;
+          line-height: 1.2 !important;
+        }
+        h1,.stMarkdown h1 { font-size: 2rem !important; }
+        h2,.stMarkdown h2 { font-size: 1.5rem !important; }
+        h3,.stMarkdown h3 { font-size: 1.15rem !important; }
 
+        /* ── Sidebar ── */
+        [data-testid="stSidebar"] {
+          background-color: var(--surface) !important;
+          border-right: 1px solid var(--border) !important;
+        }
+        [data-testid="stSidebar"] * { color: var(--text) !important; }
+
+        /* ── Metric cards ── */
         [data-testid="stMetric"] {
-          background-color: var(--tt-panel);
-          border: 1px solid var(--tt-border);
-          border-top: 2px solid var(--tt-amber);
-          border-radius: 4px;
-          padding: 12px 14px;
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-top: 3px solid var(--orange);
+          border-radius: var(--r-md);
+          padding: 18px 20px 14px;
+          box-shadow: var(--shadow-sm);
+          transition: box-shadow 0.2s, border-top-color 0.2s;
         }
-        [data-testid="stMetricValue"] { font-family: 'IBM Plex Mono', monospace !important; color: var(--tt-text); }
-        [data-testid="stMetricLabel"] { color: var(--tt-muted) !important; }
+        [data-testid="stMetric"]:hover {
+          box-shadow: var(--shadow-md);
+          border-top-color: var(--teal);
+        }
+        [data-testid="stMetricValue"] {
+          font-family: 'JetBrains Mono', monospace !important;
+          font-size: 1.6rem !important;
+          font-weight: 600 !important;
+          color: var(--text) !important;
+        }
+        [data-testid="stMetricLabel"] {
+          font-size: 0.72rem !important;
+          font-weight: 700 !important;
+          text-transform: uppercase !important;
+          letter-spacing: 0.07em !important;
+          color: var(--muted) !important;
+        }
 
+        /* ── Containers / cards ── */
         [data-testid="stVerticalBlockBorderWrapper"] {
-          background-color: var(--tt-panel);
-          border: 1px solid var(--tt-border) !important;
-          border-radius: 4px !important;
+          background: var(--surface) !important;
+          border: 1px solid var(--border) !important;
+          border-radius: var(--r-md) !important;
+          box-shadow: var(--shadow-sm) !important;
         }
 
-        [data-testid="stForm"] {
-          background-color: transparent;
-          border: none;
-          padding: 0;
+        /* ── Forms & inputs ── */
+        [data-testid="stForm"] { background: transparent; border: none; padding: 0; }
+        .stTextInput input, .stTextInput textarea {
+          background: var(--surface) !important;
+          border: 1.5px solid var(--border-hi) !important;
+          border-radius: var(--r-sm) !important;
+          color: var(--text) !important;
+          font-family: 'Plus Jakarta Sans', sans-serif !important;
+          font-size: 0.95rem !important;
+          padding: 10px 14px !important;
+          transition: border-color 0.18s, box-shadow 0.18s !important;
+        }
+        .stTextInput input:focus, .stTextInput textarea:focus {
+          border-color: var(--teal) !important;
+          box-shadow: 0 0 0 3px rgba(13,148,136,0.12) !important;
+          outline: none !important;
+        }
+        .stSelectbox [data-baseweb="select"] > div {
+          background: var(--surface) !important;
+          border: 1.5px solid var(--border-hi) !important;
+          border-radius: var(--r-sm) !important;
+          color: var(--text) !important;
+        }
+        .stRadio label, .stCheckbox label { color: var(--text) !important; font-size: 0.95rem !important; }
+
+        /* ── Primary button (teal) ── */
+        .stButton > button {
+          font-family: 'Plus Jakarta Sans', sans-serif !important;
+          font-weight: 700 !important;
+          font-size: 0.9rem !important;
+          background-color: var(--teal) !important;
+          color: #ffffff !important;
+          border: none !important;
+          border-radius: var(--r-sm) !important;
+          padding: 10px 22px !important;
+          letter-spacing: 0.02em !important;
+          box-shadow: 0 2px 8px rgba(13,148,136,0.22) !important;
+          transition: background-color 0.18s, box-shadow 0.18s, transform 0.1s !important;
+        }
+        .stButton > button:hover {
+          background-color: #0F766E !important;
+          box-shadow: 0 4px 16px rgba(13,148,136,0.32) !important;
+          transform: translateY(-1px) !important;
+        }
+        .stButton > button:active { transform: translateY(0) !important; }
+
+        .stFormSubmitButton > button {
+          font-family: 'Plus Jakarta Sans', sans-serif !important;
+          font-weight: 700 !important;
+          font-size: 0.95rem !important;
+          background-color: var(--teal) !important;
+          color: #ffffff !important;
+          border: none !important;
+          border-radius: var(--r-sm) !important;
+          padding: 11px 24px !important;
+          width: 100% !important;
+          letter-spacing: 0.03em !important;
+          box-shadow: 0 2px 8px rgba(13,148,136,0.22) !important;
+          transition: background-color 0.18s, box-shadow 0.18s, transform 0.1s !important;
+        }
+        .stFormSubmitButton > button:hover {
+          background-color: #0F766E !important;
+          box-shadow: 0 4px 16px rgba(13,148,136,0.32) !important;
+          transform: translateY(-1px) !important;
         }
 
-        /* Default buttons */
-        .stButton > button, .stFormSubmitButton > button {
-          font-family: 'Inter', sans-serif;
-          font-weight: 600;
-          background-color: var(--tt-cyan);
-          color: #0A1418;
-          border: none;
-          border-radius: 3px;
+        /* ── Tabs ── */
+        [data-testid="stTabs"] { border-bottom: 2px solid var(--border); margin-bottom: 4px; }
+        [data-testid="stTabs"] button {
+          font-family: 'Plus Jakarta Sans', sans-serif !important;
+          font-weight: 600 !important;
+          font-size: 0.88rem !important;
+          color: var(--muted) !important;
+          padding: 10px 18px !important;
+          border-radius: var(--r-sm) var(--r-sm) 0 0 !important;
+          transition: color 0.15s !important;
         }
-        .stButton > button:hover, .stFormSubmitButton > button:hover {
-          background-color: var(--tt-amber);
-          color: #0A1418;
-        }
-
-        [data-testid="stTabs"] button { font-family: 'Inter', sans-serif; font-weight: 500; }
+        [data-testid="stTabs"] button:hover { color: var(--text-sec) !important; }
         [data-testid="stTabs"] button[aria-selected="true"] {
-          color: var(--tt-amber) !important;
-          border-bottom-color: var(--tt-amber) !important;
+          color: var(--orange) !important;
+          border-bottom: 2px solid var(--orange) !important;
+          background-color: var(--orange-lo) !important;
         }
 
-        .stDataFrame, .stTextInput input, .stSelectbox div[data-baseweb="select"] {
-          font-family: 'IBM Plex Mono', monospace !important;
-          font-size: 0.85rem !important;
+        /* ── Dataframe ── */
+        .stDataFrame {
+          border: 1px solid var(--border) !important;
+          border-radius: var(--r-md) !important;
+          overflow: hidden !important;
+          box-shadow: var(--shadow-sm) !important;
         }
 
-        /* Capacity gauge bar */
+        /* ── Alerts ── */
+        .stAlert { border-radius: var(--r-md) !important; font-size: 0.92rem !important; }
+
+        /* ── Expander ── */
+        [data-testid="stExpander"] {
+          border: 1px solid var(--border) !important;
+          border-radius: var(--r-md) !important;
+          background: var(--surface) !important;
+          box-shadow: var(--shadow-sm) !important;
+        }
+        [data-testid="stExpander"] summary {
+          font-weight: 600 !important;
+          color: var(--text-sec) !important;
+          font-size: 0.9rem !important;
+        }
+
+        /* ── Code ── */
+        code, pre { font-family: 'JetBrains Mono', monospace !important; font-size: 0.82rem !important; }
+
+        /* ── HR ── */
+        hr { border-color: var(--border) !important; margin: 20px 0 !important; }
+
+        /* ─────────────────────────────────────────
+           CAPACITY GAUGE BAR
+        ───────────────────────────────────────── */
+        .tt-gauge-wrap {
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: var(--r-md);
+          padding: 14px 18px;
+          box-shadow: var(--shadow-sm);
+          margin-top: 6px;
+        }
         .tt-gauge-track {
-          width: 100%; height: 22px; background-color: #0A1013;
-          border: 1px solid var(--tt-border); border-radius: 3px; overflow: hidden;
-          display: flex; margin: 6px 0 4px 0;
+          width: 100%; height: 18px;
+          background: #F1F5F9;
+          border-radius: 99px;
+          overflow: hidden;
+          display: flex;
+          margin: 8px 0 6px;
+          border: 1px solid var(--border);
         }
-        .tt-gauge-community { background-color: var(--tt-green); height: 100%; }
-        .tt-gauge-commercial { background-color: var(--tt-cyan); height: 100%; }
+        .tt-gauge-community {
+          background: linear-gradient(90deg, #16A34A, #22C55E);
+          height: 100%; border-radius: 99px 0 0 99px;
+        }
+        .tt-gauge-commercial {
+          background: linear-gradient(90deg, #0D9488, #14B8A6);
+          height: 100%;
+        }
         .tt-gauge-caption {
-          font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; color: var(--tt-muted);
-          display: flex; justify-content: space-between;
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 0.76rem;
+          color: var(--muted);
+          display: flex;
+          justify-content: space-between;
         }
 
-        /* -------------------------------------------------------
-           COMMUNITY DOOR — larger touch targets, bigger text
-        ------------------------------------------------------- */
+        /* ─────────────────────────────────────────
+           STAGING BANNER
+        ───────────────────────────────────────── */
+        .tt-staging-banner {
+          background: #F0FDF4;
+          border: 1px solid #BBF7D0;
+          border-left: 4px solid #16A34A;
+          padding: 10px 18px;
+          border-radius: var(--r-sm);
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: space-between;
+          gap: 8px;
+          margin-bottom: 18px;
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 0.78rem;
+        }
 
-        /* Opportunity pick cards (Step 1) */
-        .cd-pick-card {
-          background-color: var(--tt-panel);
-          border: 2px solid var(--tt-border);
-          border-radius: var(--cd-radius);
-          padding: 22px 14px 18px 14px;
+        /* ─────────────────────────────────────────
+           SCREEN SECTION HEADINGS
+        ───────────────────────────────────────── */
+        .tt-screen-heading {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 14px;
+          padding-bottom: 10px;
+          border-bottom: 1px solid var(--border);
+        }
+        .tt-screen-title {
+          font-family: 'Space Grotesk', sans-serif;
+          font-size: 1.45rem;
+          font-weight: 800;
+          color: var(--text);
+          letter-spacing: -0.02em;
+        }
+        .tt-badge {
+          font-size: 0.72rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.07em;
+          padding: 3px 10px;
+          border-radius: 99px;
+        }
+        .tt-badge-orange { background: var(--orange-lo); color: var(--orange); }
+        .tt-badge-teal   { background: var(--teal-lo);   color: var(--teal);   }
+        .tt-badge-green  { background: var(--green-lo);  color: var(--green);  }
+
+        /* ─────────────────────────────────────────
+           LOGIN / REGISTER SCREEN
+        ───────────────────────────────────────── */
+        .auth-hero {
           text-align: center;
-          cursor: pointer;
-          transition: border-color 0.15s, background-color 0.15s;
-          min-height: 160px;
+          padding: 32px 24px 20px;
+        }
+        .auth-logo { font-size: 3.5rem; }
+        .auth-title {
+          font-family: 'Space Grotesk', sans-serif;
+          font-size: 2rem;
+          font-weight: 800;
+          color: var(--text);
+          letter-spacing: -0.025em;
+          margin: 8px 0 4px;
+        }
+        .auth-sub { color: var(--text-sec); font-size: 0.95rem; }
+
+        .auth-card {
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: var(--r-xl);
+          padding: 32px 36px;
+          box-shadow: var(--shadow-lg);
+          max-width: 480px;
+          margin: 0 auto;
+        }
+
+        .account-type-btn {
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
           gap: 8px;
+          padding: 22px 14px;
+          border-radius: var(--r-lg);
+          cursor: pointer;
+          transition: all 0.18s;
+          text-align: center;
+          min-height: 120px;
         }
-        .cd-pick-card:hover {
-          border-color: var(--tt-amber);
-          background-color: #1e2a30;
+        .account-type-btn.mining {
+          background: var(--orange-lo);
+          border: 2px solid var(--orange-mid);
         }
-        .cd-pick-icon {
-          font-size: var(--cd-icon-size);
-          line-height: 1;
+        .account-type-btn.mining:hover, .account-type-btn.mining.selected {
+          border-color: var(--orange);
+          box-shadow: 0 0 0 3px rgba(234,88,12,0.12);
         }
-        .cd-pick-label {
-          font-family: 'Oswald', sans-serif;
-          font-size: 1.05rem;
-          font-weight: 600;
-          color: var(--tt-text);
+        .account-type-btn.community {
+          background: var(--green-lo);
+          border: 2px solid var(--green-mid);
+        }
+        .account-type-btn.community:hover, .account-type-btn.community.selected {
+          border-color: var(--green);
+          box-shadow: 0 0 0 3px rgba(22,163,74,0.12);
+        }
+        .account-type-icon { font-size: 2.2rem; }
+        .account-type-label {
+          font-family: 'Space Grotesk', sans-serif;
+          font-weight: 700;
+          font-size: 1rem;
+          color: var(--text);
+        }
+        .account-type-sub { font-size: 0.8rem; color: var(--text-sec); }
+
+        /* ─────────────────────────────────────────
+           ROLE BADGE (sidebar)
+        ───────────────────────────────────────── */
+        .sidebar-user-card {
+          background: var(--bg);
+          border: 1px solid var(--border);
+          border-radius: var(--r-md);
+          padding: 12px 14px;
+          margin-bottom: 16px;
+        }
+        .sidebar-user-name {
+          font-weight: 700;
+          font-size: 0.95rem;
+          color: var(--text);
+        }
+        .sidebar-user-role {
+          font-size: 0.76rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
           margin-top: 4px;
         }
-        .cd-pick-sublabel {
-          font-size: 0.85rem;
-          color: var(--tt-muted);
+        .role-manager  { color: var(--orange); }
+        .role-operator { color: var(--teal); }
+        .role-community{ color: var(--green); }
+
+        /* ─────────────────────────────────────────
+           COMMUNITY DOOR
+        ───────────────────────────────────────── */
+        .cd-pick-card {
+          background: var(--surface);
+          border: 2px solid var(--border);
+          border-radius: var(--cd-radius);
+          padding: 26px 14px 20px;
+          text-align: center;
+          min-height: 185px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          margin-bottom: 4px;
+          transition: border-color 0.18s, box-shadow 0.18s, transform 0.15s;
+          box-shadow: var(--shadow-sm);
+        }
+        .cd-pick-card:hover {
+          border-color: var(--orange);
+          box-shadow: var(--shadow-md);
+          transform: translateY(-3px);
+        }
+        .cd-pick-icon { font-size: var(--cd-icon-size); line-height: 1; }
+        .cd-pick-label {
+          font-family: 'Space Grotesk', sans-serif;
+          font-size: 1rem;
+          font-weight: 700;
+          color: var(--text);
+        }
+        .cd-pick-sublabel { font-size: 0.83rem; color: var(--text-sec); line-height: 1.4; }
+
+        .cd-pick-btn > button {
+          min-height: var(--cd-touch-min) !important;
+          font-size: 0.95rem !important;
+          font-weight: 700 !important;
+          width: 100% !important;
+          border-radius: var(--r-sm) !important;
+          background: var(--surface) !important;
+          color: var(--text) !important;
+          border: 1.5px solid var(--border-hi) !important;
+          box-shadow: var(--shadow-sm) !important;
+          transition: border-color 0.15s, color 0.15s !important;
+        }
+        .cd-pick-btn > button:hover {
+          border-color: var(--orange) !important;
+          color: var(--orange) !important;
+          transform: none !important;
+          box-shadow: 0 0 0 3px rgba(234,88,12,0.1) !important;
         }
 
-        /* Apply button — big, finger-friendly */
-        .cd-apply-btn > button, .stFormSubmitButton.cd-apply-btn > button {
-          min-height: var(--cd-touch-min);
-          font-size: 1.1rem !important;
-          padding: var(--cd-btn-padding) !important;
-          width: 100%;
-          border-radius: var(--cd-radius) !important;
-          background-color: var(--tt-green) !important;
-          color: #0A1418 !important;
-          font-weight: 700 !important;
-          letter-spacing: 0.03em;
+        .cd-apply-btn > button {
+          min-height: var(--cd-touch-min) !important;
+          font-size: 1.05rem !important;
+          font-weight: 800 !important;
+          width: 100% !important;
+          border-radius: var(--r-md) !important;
+          background-color: var(--green) !important;
+          color: #ffffff !important;
+          border: none !important;
+          box-shadow: 0 4px 14px rgba(22,163,74,0.28) !important;
+          letter-spacing: 0.03em !important;
         }
         .cd-apply-btn > button:hover {
-          background-color: var(--tt-amber) !important;
+          background-color: #15803D !important;
+          box-shadow: 0 6px 20px rgba(22,163,74,0.36) !important;
+          transform: translateY(-2px) !important;
         }
 
-        /* Back button — secondary */
         .cd-back-btn > button {
-          min-height: 44px;
-          background-color: transparent !important;
-          color: var(--tt-muted) !important;
-          border: 1px solid var(--tt-border) !important;
-          border-radius: var(--cd-radius) !important;
-          font-size: 0.95rem !important;
+          min-height: 44px !important;
+          background: transparent !important;
+          color: var(--text-sec) !important;
+          border: 1px solid var(--border) !important;
+          border-radius: var(--r-sm) !important;
+          font-size: 0.9rem !important;
+          box-shadow: none !important;
+        }
+        .cd-back-btn > button:hover {
+          border-color: var(--border-hi) !important;
+          color: var(--text) !important;
+          background: var(--bg) !important;
+          transform: none !important;
+          box-shadow: none !important;
         }
 
-        /* Bar chart rows for "numbers as pictures" */
-        .cd-bar-row {
-          display: flex; align-items: center; gap: 10px;
-          margin: 4px 0; font-size: 0.9rem;
-        }
-        .cd-bar-label { color: var(--tt-muted); min-width: 80px; font-size: 0.82rem; }
+        .cd-bar-row { display: flex; align-items: center; gap: 10px; margin: 5px 0; }
+        .cd-bar-label { color: var(--muted); min-width: 72px; font-size: 0.78rem; }
         .cd-bar-track {
-          flex: 1; height: 14px; background-color: #0A1013;
-          border-radius: 3px; overflow: hidden;
-          border: 1px solid var(--tt-border);
+          flex: 1; height: 11px;
+          background: #F1F5F9;
+          border-radius: 99px;
+          overflow: hidden;
+          border: 1px solid var(--border);
         }
-        .cd-bar-fill { height: 100%; border-radius: 3px; }
-        .cd-bar-value { min-width: 54px; text-align: right; font-size: 0.82rem; color: var(--tt-text); font-family: 'IBM Plex Mono', monospace; }
+        .cd-bar-fill { height: 100%; border-radius: 99px; }
+        .cd-bar-value {
+          min-width: 52px; text-align: right;
+          font-size: 0.78rem;
+          color: var(--text-sec);
+          font-family: 'JetBrains Mono', monospace;
+        }
 
-        /* WhatsApp human fallback strip */
         .cd-whatsapp-strip {
-          background-color: #0d2318;
-          border: 1px solid #1a4a2e;
+          background: #F0FDF4;
+          border: 1px solid #BBF7D0;
           border-left: 4px solid #25D366;
-          border-radius: 8px;
-          padding: 12px 16px;
+          border-radius: var(--r-md);
+          padding: 14px 18px;
           display: flex;
           align-items: center;
           gap: 14px;
-          font-size: var(--cd-font-size);
-          margin: 10px 0;
+          margin: 16px 0 8px;
+          box-shadow: var(--shadow-sm);
         }
         .cd-whatsapp-icon { font-size: 1.8rem; flex-shrink: 0; }
-        .cd-whatsapp-number { font-weight: 700; color: #25D366; font-size: 1.1rem; }
-        .cd-whatsapp-name { color: var(--tt-muted); font-size: 0.88rem; }
+        .cd-whatsapp-number { font-weight: 800; color: #16A34A; font-size: 1.1rem; }
+        .cd-whatsapp-name { color: var(--text-sec); font-size: 0.84rem; margin-top: 2px; }
 
-        /* Offline / low-data note */
         .cd-offline-note {
-          background-color: #0f1a20;
-          border: 1px solid var(--tt-border);
-          border-radius: 6px;
+          background: #FAFAFA;
+          border: 1px solid var(--border);
+          border-radius: var(--r-sm);
           padding: 8px 14px;
-          font-size: 0.82rem;
-          color: var(--tt-muted);
+          font-size: 0.8rem;
+          color: var(--muted);
           margin-bottom: 10px;
         }
 
-        /* Listen (voice) button */
-        .cd-listen-btn {
-          display: inline-flex; align-items: center; gap: 5px;
-          background: none; border: 1px solid var(--tt-border);
-          border-radius: 20px; padding: 3px 10px 3px 8px;
-          font-size: 0.8rem; color: var(--tt-muted);
-          cursor: pointer; transition: border-color 0.15s;
-        }
-        .cd-listen-btn:hover { border-color: var(--tt-amber); color: var(--tt-amber); }
-        .cd-listen-icon { font-size: 1rem; }
-
-        /* Confirmation / success screen */
         .cd-success-box {
-          background-color: #0d2318;
-          border: 2px solid var(--tt-green);
-          border-radius: var(--cd-radius);
-          padding: 32px 24px;
+          background: var(--green-lo);
+          border: 2px solid var(--green-mid);
+          border-radius: var(--r-xl);
+          padding: 40px 32px;
           text-align: center;
+          box-shadow: var(--shadow-md);
         }
-        .cd-success-icon { font-size: 3.5rem; }
+        .cd-success-icon { font-size: 4rem; }
         .cd-success-heading {
-          font-family: 'Oswald', sans-serif;
-          font-size: 1.7rem;
-          color: var(--tt-green);
-          margin: 10px 0 6px 0;
+          font-family: 'Space Grotesk', sans-serif;
+          font-size: 2rem;
+          font-weight: 800;
+          color: var(--green);
+          margin: 12px 0 6px;
+          letter-spacing: -0.02em;
         }
-        .cd-success-sub { color: var(--tt-muted); font-size: 1rem; }
+        .cd-success-sub { color: var(--text-sec); font-size: 1rem; line-height: 1.6; }
 
-        /* Language selector pill row */
-        .cd-lang-row {
-          display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;
+        .cd-step-indicator { display: flex; align-items: center; margin-bottom: 22px; }
+        .cd-step-dot {
+          width: 28px; height: 28px; border-radius: 50%;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 0.75rem; font-weight: 700; flex-shrink: 0;
         }
+        .cd-step-dot.active { background: var(--orange); color: #fff; }
+        .cd-step-dot.done   { background: var(--green);  color: #fff; }
+        .cd-step-dot.idle   { background: var(--border); color: var(--muted); }
+        .cd-step-line { flex: 1; height: 2px; background: var(--border); margin: 0 4px; }
+        .cd-step-line.done { background: var(--green); }
         </style>
         """,
         unsafe_allow_html=True,
@@ -441,266 +783,470 @@ def inject_theme() -> None:
 
 
 # =====================================================================
-# SESSION STATE
+# 4. SESSION STATE
 # =====================================================================
-if "tamper_active" not in st.session_state:
-    st.session_state.tamper_active = False
-if "tamper_mode" not in st.session_state:
-    st.session_state.tamper_mode = config.SIGNATURE_JUMP
-if "commercial_interests" not in st.session_state:
-    st.session_state.commercial_interests = []
-if "community_applications" not in st.session_state:
-    st.session_state.community_applications = []
-if "telemetry_cache" not in st.session_state:
-    st.session_state.telemetry_cache = {}
-# Community Door stepped flow state
-if "cd_language" not in st.session_state:
-    st.session_state.cd_language = "English"
-if "cd_step" not in st.session_state:
-    st.session_state.cd_step = "pick"          # "pick" | "detail" | "done"
-if "cd_selected_card_id" not in st.session_state:
-    st.session_state.cd_selected_card_id = None
-if "cd_applicant_name" not in st.session_state:
-    st.session_state.cd_applicant_name = ""
+def _init_session() -> None:
+    defaults = {
+        "authenticated": False,
+        "user": None,                  # dict from DEMO_USERS
+        "auth_mode": "login",          # "login" | "register"
+        "reg_account_type": None,      # "mining" | "community"
+        "tamper_active": False,
+        "tamper_mode": config.SIGNATURE_JUMP,
+        "commercial_interests": [],
+        "community_applications": [],
+        "telemetry_cache": {},
+        "cd_language": "English",
+        "cd_step": "pick",
+        "cd_selected_card_id": None,
+        "cd_applicant_name": "",
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+_init_session()
 
 
 # =====================================================================
-# HELPERS
+# 5. HELPERS
 # =====================================================================
 def t(key: str) -> str:
-    """Return the translated string for the current Community Door language."""
     lang = st.session_state.get("cd_language", "English")
-    return LANG_STRINGS.get(lang, LANG_STRINGS["English"]).get(key, LANG_STRINGS["English"].get(key, key))
-
+    return LANG_STRINGS.get(lang, LANG_STRINGS["English"]).get(
+        key, LANG_STRINGS["English"].get(key, key)
+    )
 
 def card_benefit(card_id: str) -> str:
-    """Return language-appropriate one-line benefit for a card."""
     lang = st.session_state.get("cd_language", "English")
     meta = CARD_META.get(card_id, {})
-    mapping = {"English": "benefit_en", "isiZulu": "benefit_zu", "Setswana": "benefit_tn", "Afrikaans": "benefit_af"}
+    mapping = {"English": "benefit_en", "isiZulu": "benefit_zu",
+               "Setswana": "benefit_tn", "Afrikaans": "benefit_af"}
     return meta.get(mapping.get(lang, "benefit_en"), meta.get("benefit_en", ""))
 
+def current_role() -> str:
+    u = st.session_state.user
+    return u["role"] if u else ""
+
+def is_manager()  -> bool: return current_role() == "manager"
+def is_operator() -> bool: return current_role() == "operator"
+def is_community()-> bool: return current_role() == "community"
 
 def listen_button(text_to_speak: str, key: str) -> None:
-    """
-    Renders a small 🔊 Listen button. On click, uses the Web Speech API via
-    st.components.v1.html to speak the text aloud in the current language.
-    Gracefully does nothing on browsers without Speech API support.
-    """
-    lang_code_map = {"English": "en-ZA", "isiZulu": "zu-ZA", "Setswana": "tn-ZA", "Afrikaans": "af-ZA"}
-    lang_code = lang_code_map.get(st.session_state.get("cd_language", "English"), "en-ZA")
-    safe_text = text_to_speak.replace("'", "\\'").replace('"', '\\"').replace("\n", " ")
-
     import streamlit.components.v1 as components
+    lang_code_map = {"English": "en-ZA", "isiZulu": "zu-ZA",
+                     "Setswana": "tn-ZA", "Afrikaans": "af-ZA"}
+    lang_code = lang_code_map.get(st.session_state.get("cd_language", "English"), "en-ZA")
+    safe = text_to_speak.replace("'", "\\'").replace('"', '\\"').replace("\n", " ")
     components.html(
-        f"""
-        <button onclick="
-          if('speechSynthesis' in window){{
-            var u=new SpeechSynthesisUtterance('{safe_text}');
-            u.lang='{lang_code}';
-            window.speechSynthesis.cancel();
-            window.speechSynthesis.speak(u);
-          }}
-        " style="
-          display:inline-flex;align-items:center;gap:5px;
-          background:none;border:1px solid #2B363D;border-radius:20px;
-          padding:4px 12px 4px 10px;font-size:0.82rem;color:#8FA0A8;
-          cursor:pointer;font-family:Inter,sans-serif;
-        ">
+        f"""<button onclick="if('speechSynthesis' in window){{
+          var u=new SpeechSynthesisUtterance('{safe}');
+          u.lang='{lang_code}';
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(u);
+        }}" style="display:inline-flex;align-items:center;gap:5px;
+          background:#F8FAFC;border:1px solid #E2E8F0;border-radius:99px;
+          padding:4px 12px 4px 10px;font-size:0.8rem;color:#475569;
+          cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;">
           🔊 {t('listen_tooltip')}
-        </button>
-        """,
+        </button>""",
         height=38,
     )
 
-
 def whatsapp_strip() -> None:
-    """Render the human fallback contact strip."""
     st.markdown(
-        f"""
-        <div class="cd-whatsapp-strip">
+        f"""<div class="cd-whatsapp-strip">
           <span class="cd-whatsapp-icon">💬</span>
           <div>
-            <div style="font-size:0.85rem;color:#8FA0A8;">{t('whatsapp_label')}</div>
+            <div style="font-size:0.82rem;color:#475569;">{t('whatsapp_label')}</div>
             <div class="cd-whatsapp-number">{t('whatsapp_number')}</div>
             <div class="cd-whatsapp-name">{t('whatsapp_contact')}</div>
           </div>
-        </div>
-        """,
+        </div>""",
         unsafe_allow_html=True,
     )
 
-
 def offline_note() -> None:
-    st.markdown(f'<div class="cd-offline-note">{t("offline_note")}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="cd-offline-note">{t("offline_note")}</div>',
+        unsafe_allow_html=True,
+    )
 
-
-def jobs_bar(jobs_label: str, jobs_count_str: str, color: str) -> None:
-    """
-    Visual bar comparing 'before' (0 jobs) and 'after' (N jobs).
-    Makes numeracy optional — the bar itself communicates magnitude.
-    """
-    # Parse first integer from jobs string, e.g. "45 direct full-time, 90 seasonal" -> 45
+def jobs_bar(jobs_count_str: str, color: str) -> None:
     import re
     match = re.search(r"\d+", jobs_count_str)
     jobs_num = int(match.group()) if match else 10
-    # Scale: 60 jobs = 100% bar width
     pct = min(100, int(jobs_num / 60 * 100))
-    before_label = t("before_label")
-    after_label = t("after_label")
-
     st.markdown(
-        f"""
-        <div style="margin:10px 0 6px 0;">
-          <div style="font-size:0.8rem;color:#8FA0A8;margin-bottom:4px;">{t('label_jobs')}</div>
+        f"""<div style="margin:10px 0 6px;">
+          <div style="font-size:0.78rem;color:#94A3B8;margin-bottom:4px;">{t('label_jobs')}</div>
           <div class="cd-bar-row">
-            <span class="cd-bar-label">{before_label}</span>
-            <div class="cd-bar-track">
-              <div class="cd-bar-fill" style="width:3%;background-color:#2B363D;"></div>
-            </div>
+            <span class="cd-bar-label">{t('before_label')}</span>
+            <div class="cd-bar-track"><div class="cd-bar-fill" style="width:2%;background:#E2E8F0;"></div></div>
             <span class="cd-bar-value">0</span>
           </div>
           <div class="cd-bar-row">
-            <span class="cd-bar-label">{after_label}</span>
-            <div class="cd-bar-track">
-              <div class="cd-bar-fill" style="width:{pct}%;background-color:{color};"></div>
-            </div>
+            <span class="cd-bar-label">{t('after_label')}</span>
+            <div class="cd-bar-track"><div class="cd-bar-fill" style="width:{pct}%;background:{color};"></div></div>
             <span class="cd-bar-value">{jobs_count_str.split(',')[0]}</span>
           </div>
-        </div>
-        """,
+        </div>""",
         unsafe_allow_html=True,
     )
 
-
 def heat_bar(allocated_mw: float, total_mw: float, color: str) -> None:
-    """Visual bar showing how much free heat this project gets vs the mine's total."""
     pct = min(100, int(allocated_mw / total_mw * 100))
-    before_label = t("before_label")
-    after_label = t("after_label")
     st.markdown(
-        f"""
-        <div style="margin:10px 0 6px 0;">
-          <div style="font-size:0.8rem;color:#8FA0A8;margin-bottom:4px;">{t('label_heat')}</div>
+        f"""<div style="margin:10px 0 6px;">
+          <div style="font-size:0.78rem;color:#94A3B8;margin-bottom:4px;">{t('label_heat')}</div>
           <div class="cd-bar-row">
-            <span class="cd-bar-label">{before_label}</span>
-            <div class="cd-bar-track">
-              <div class="cd-bar-fill" style="width:3%;background-color:#2B363D;"></div>
-            </div>
+            <span class="cd-bar-label">{t('before_label')}</span>
+            <div class="cd-bar-track"><div class="cd-bar-fill" style="width:2%;background:#E2E8F0;"></div></div>
             <span class="cd-bar-value">R0</span>
           </div>
           <div class="cd-bar-row">
-            <span class="cd-bar-label">{after_label}</span>
-            <div class="cd-bar-track">
-              <div class="cd-bar-fill" style="width:{pct}%;background-color:{color};"></div>
-            </div>
+            <span class="cd-bar-label">{t('after_label')}</span>
+            <div class="cd-bar-track"><div class="cd-bar-fill" style="width:{pct}%;background:{color};"></div></div>
             <span class="cd-bar-value">{allocated_mw} MW</span>
           </div>
-        </div>
-        """,
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+def screen_heading(icon: str, title: str, badge: str, badge_cls: str) -> None:
+    st.markdown(
+        f"""<div class="tt-screen-heading">
+          <span class="tt-screen-title">{icon} {title}</span>
+          <span class="tt-badge {badge_cls}">{badge}</span>
+        </div>""",
         unsafe_allow_html=True,
     )
 
 
 # =====================================================================
-# STAGING BANNER
+# 6. LOGIN & REGISTER SCREENS
+# =====================================================================
+def render_auth() -> None:
+    """Full-page auth gate shown when user is not logged in."""
+    # centre the form with empty columns
+    _, mid, _ = st.columns([1, 2, 1])
+
+    with mid:
+        st.markdown(
+            """<div class="auth-hero">
+              <div class="auth-logo">🌡️</div>
+              <div class="auth-title">ThermalTwin</div>
+              <div class="auth-sub">MineFlow AI &nbsp;·&nbsp; Mine heat, redirected to the community</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+
+        # Toggle login / register
+        col_l, col_r = st.columns(2)
+        if col_l.button("Sign In", use_container_width=True,
+                        type="primary" if st.session_state.auth_mode == "login" else "secondary"):
+            st.session_state.auth_mode = "login"
+            st.rerun()
+        if col_r.button("Create Account", use_container_width=True,
+                        type="primary" if st.session_state.auth_mode == "register" else "secondary"):
+            st.session_state.auth_mode = "register"
+            st.rerun()
+
+        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+        if st.session_state.auth_mode == "login":
+            _render_login_form()
+        else:
+            _render_register_form()
+
+        # Demo credentials hint
+        with st.expander("🔑 Demo credentials (hackathon)"):
+            st.markdown(
+                """
+| Role | Email | Password |
+|---|---|---|
+| Mine Manager | manager@thermaltwin.co.za | manager123 |
+| Mine Operator | operator@thermaltwin.co.za | operator123 |
+| Community Member | community@merafong.co.za | community123 |
+                """
+            )
+
+
+def _render_login_form() -> None:
+    with st.form("login_form"):
+        st.markdown("#### Sign in to your account")
+        email = st.text_input("Email address", placeholder="you@example.com")
+        password = st.text_input("Password", type="password", placeholder="••••••••")
+        submitted = st.form_submit_button("Sign In →", use_container_width=True)
+
+    if submitted:
+        user = DEMO_USERS.get(email.strip().lower())
+        if user and user["password"] == password:
+            st.session_state.authenticated = True
+            st.session_state.user = {**user, "email": email.strip().lower()}
+            st.rerun()
+        else:
+            st.error("Incorrect email or password. Check the demo credentials below.")
+
+
+def _render_register_form() -> None:
+    """
+    Registration flow:
+      Step A — choose account type (Mining Business or Community Member)
+      Step B — fill in details
+    """
+    st.markdown("#### Create your account")
+
+    # ---- Step A: account type picker ----
+    if st.session_state.reg_account_type is None:
+        st.markdown(
+            "<p style='color:#475569;font-size:0.9rem;margin-bottom:12px;'>"
+            "Who are you joining as?</p>",
+            unsafe_allow_html=True,
+        )
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown(
+                """<div class="account-type-btn mining">
+                  <span class="account-type-icon">⛏️</span>
+                  <span class="account-type-label">Mining Business</span>
+                  <span class="account-type-sub">Managers & operators at a mine site</span>
+                </div>""",
+                unsafe_allow_html=True,
+            )
+            if st.button("Select — Mining Business", use_container_width=True, key="pick_mining"):
+                st.session_state.reg_account_type = "mining"
+                st.rerun()
+        with c2:
+            st.markdown(
+                """<div class="account-type-btn community">
+                  <span class="account-type-icon">🌱</span>
+                  <span class="account-type-label">Community Member</span>
+                  <span class="account-type-sub">Local residents & entrepreneurs</span>
+                </div>""",
+                unsafe_allow_html=True,
+            )
+            if st.button("Select — Community Member", use_container_width=True, key="pick_community"):
+                st.session_state.reg_account_type = "community"
+                st.rerun()
+        return
+
+    # ---- Step B: fill in details ----
+    acct = st.session_state.reg_account_type
+    icon = "⛏️" if acct == "mining" else "🌱"
+    label = "Mining Business" if acct == "mining" else "Community Member"
+    st.markdown(
+        f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:14px;'>"
+        f"<span style='font-size:1.3rem;'>{icon}</span>"
+        f"<span style='font-weight:700;'>{label}</span>"
+        f"<button onclick='location.reload()' style='margin-left:auto;background:none;"
+        f"border:1px solid #E2E8F0;border-radius:6px;padding:3px 10px;font-size:0.8rem;"
+        f"color:#475569;cursor:pointer;'>Change</button></div>",
+        unsafe_allow_html=True,
+    )
+    # "Change" is cosmetic above; provide a real Streamlit button too
+    if st.button("← Change account type", key="change_acct"):
+        st.session_state.reg_account_type = None
+        st.rerun()
+
+    with st.form("register_form"):
+        full_name = st.text_input("Full name", placeholder="Your full name")
+        email = st.text_input("Email address", placeholder="you@example.com")
+        password = st.text_input("Password", type="password", placeholder="Min 6 characters")
+        confirm = st.text_input("Confirm password", type="password", placeholder="Repeat password")
+
+        role = "community"
+        if acct == "mining":
+            role = st.selectbox(
+                "Your role at the mine",
+                ["manager", "operator"],
+                format_func=lambda x: "Mine Manager" if x == "manager" else "Mine Operator",
+            )
+            mine = st.selectbox("Mine site", config.get_mines_by_phase(1))
+        else:
+            mine = None
+
+        submitted = st.form_submit_button("Create Account →", use_container_width=True)
+
+    if submitted:
+        errors = []
+        if not full_name.strip():
+            errors.append("Full name is required.")
+        if not email.strip() or "@" not in email:
+            errors.append("A valid email address is required.")
+        if email.strip().lower() in DEMO_USERS:
+            errors.append("An account with that email already exists.")
+        if len(password) < 6:
+            errors.append("Password must be at least 6 characters.")
+        if password != confirm:
+            errors.append("Passwords do not match.")
+
+        if errors:
+            for e in errors:
+                st.error(e)
+        else:
+            # Add to in-memory store and log straight in
+            new_user = {
+                "password": password,
+                "name": full_name.strip(),
+                "account_type": acct,
+                "role": role,
+                "mine": mine,
+            }
+            DEMO_USERS[email.strip().lower()] = new_user
+            st.session_state.authenticated = True
+            st.session_state.user = {**new_user, "email": email.strip().lower()}
+            st.session_state.reg_account_type = None
+            st.rerun()
+
+
+# =====================================================================
+# 7. SIDEBAR — user card + mine selector + logout
+# =====================================================================
+def render_sidebar() -> str:
+    """Render sidebar, return selected mine name (or None for community)."""
+    u = st.session_state.user
+    role = u["role"]
+    role_label = {"manager": "Mine Manager", "operator": "Mine Operator",
+                  "community": "Community Member"}.get(role, role.title())
+    role_cls = {"manager": "role-manager", "operator": "role-operator",
+                "community": "role-community"}.get(role, "")
+
+    st.sidebar.markdown(
+        f"""<div class="sidebar-user-card">
+          <div class="sidebar-user-name">👤 {u['name']}</div>
+          <div class="sidebar-user-role {role_cls}">{role_label}</div>
+          <div style="font-size:0.76rem;color:#94A3B8;margin-top:2px;">{u['email']}</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+    selected_mine = None
+    if role in ("manager", "operator"):
+        phase1 = config.get_mines_by_phase(1)
+        default_idx = phase1.index(u.get("mine", config.DEFAULT_MINE)) \
+            if u.get("mine") in phase1 else 0
+        selected_mine = st.sidebar.selectbox(
+            "Active mine", phase1, index=default_idx
+        )
+        st.sidebar.caption(config.get_mine_config(selected_mine)["location"])
+        st.sidebar.markdown("---")
+
+    st.sidebar.caption("No backend · Session data only · POPIA-compliant")
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🚪 Sign Out", use_container_width=True):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        _init_session()
+        st.rerun()
+
+    return selected_mine
+
+
+# =====================================================================
+# 8. SHARED STATUS HEADER  (mining roles only)
 # =====================================================================
 def render_staging_banner() -> None:
     p1 = config.STAGING_CONFIG["Phase 1"]
     p2 = config.STAGING_CONFIG["Phase 2"]
     st.markdown(
-        f"""
-        <div style="background-color:#182027;border:1px solid #2B363D;border-left:3px solid #59C97A;
-        padding:10px 18px;border-radius:4px;display:flex;flex-wrap:wrap;
-        justify-content:space-between;gap:8px;margin-bottom:14px;
-        font-family:'IBM Plex Mono',monospace;font-size:0.85rem;">
-          <div style="color:#59C97A;">
-            ● {p1['name']} · {p1['depth_band']} · {', '.join(p1['mines'])}
+        f"""<div class="tt-staging-banner">
+          <div style="color:#16A34A;display:flex;align-items:center;gap:7px;">
+            <span style="width:8px;height:8px;border-radius:50%;background:#16A34A;
+              display:inline-block;box-shadow:0 0 5px #16A34A;"></span>
+            <strong>{p1['name']}</strong> &nbsp;·&nbsp; {p1['depth_band']}
+            &nbsp;·&nbsp; {', '.join(p1['mines'])}
           </div>
-          <div style="color:#8FA0A8;">
-            ○ {p2['name']} · {p2['depth_band']} · {', '.join(p2['mines'])}
+          <div style="color:#94A3B8;display:flex;align-items:center;gap:7px;">
+            <span style="width:8px;height:8px;border-radius:50%;background:#CBD5E1;
+              display:inline-block;"></span>
+            {p2['name']} &nbsp;·&nbsp; {p2['depth_band']}
+            &nbsp;·&nbsp; {', '.join(p2['mines'])} (Roadmap)
           </div>
-        </div>
-        """,
+        </div>""",
         unsafe_allow_html=True,
     )
 
 
-# =====================================================================
-# SHARED LIVE STATUS HEADER
-# =====================================================================
 def render_status_header(selected_mine: str) -> None:
     mine_cfg = config.get_mine_config(selected_mine)
     available_mw = float(mine_cfg["available_heat_capacity_mw"])
-
     community_mw = config.get_total_allocated_community_heat_mw()
     commercial_mw = sum(i["heat_mw"] for i in st.session_state.commercial_interests)
     allocated_mw = round(community_mw + commercial_mw, 2)
     remaining_mw = max(0.0, round(available_mw - allocated_mw, 2))
 
-    st.markdown(f"#### {config.SURFACE_PORTAL_HEADER}")
+    st.markdown(
+        "<div style='font-size:0.72rem;font-weight:700;text-transform:uppercase;"
+        "letter-spacing:0.1em;color:#94A3B8;margin-bottom:8px;'>"
+        f"{config.SURFACE_PORTAL_HEADER}</div>",
+        unsafe_allow_html=True,
+    )
     c1, c2, c3 = st.columns(3)
-    c1.metric("Available Thermal Output", f"{available_mw:.1f} MWth", help=f"{selected_mine} fence-line capacity")
+    c1.metric("Available Thermal Output", f"{available_mw:.1f} MWth",
+              help=f"{selected_mine} fence-line capacity")
     c2.metric("Allocated (Community + Commercial)", f"{allocated_mw:.1f} MWth")
     c3.metric("Unallocated Headroom", f"{remaining_mw:.1f} MWth")
 
-    community_pct = min(100.0, (community_mw / available_mw) * 100) if available_mw > 0 else 0.0
-    commercial_pct = min(100.0 - community_pct, (commercial_mw / available_mw) * 100) if available_mw > 0 else 0.0
+    cpct = min(100.0, community_mw / available_mw * 100) if available_mw else 0.0
+    xpct = min(100.0 - cpct, commercial_mw / available_mw * 100) if available_mw else 0.0
     st.markdown(
-        f"""
-        <div class="tt-gauge-track">
-          <div class="tt-gauge-community" style="width:{community_pct:.1f}%;"></div>
-          <div class="tt-gauge-commercial" style="width:{commercial_pct:.1f}%;"></div>
-        </div>
-        <div class="tt-gauge-caption">
-          <span>● community {community_mw:.1f} MWth &nbsp; ● commercial {commercial_mw:.1f} MWth</span>
-          <span>{remaining_mw:.1f} MWth headroom</span>
-        </div>
-        """,
+        f"""<div class="tt-gauge-wrap">
+          <div class="tt-gauge-track">
+            <div class="tt-gauge-community" style="width:{cpct:.1f}%;"></div>
+            <div class="tt-gauge-commercial" style="width:{xpct:.1f}%;"></div>
+          </div>
+          <div class="tt-gauge-caption">
+            <span>
+              <span style="color:#16A34A;">●</span> community {community_mw:.1f} MWth
+              &nbsp;&nbsp;
+              <span style="color:#0D9488;">●</span> commercial {commercial_mw:.1f} MWth
+            </span>
+            <span style="color:#EA580C;font-weight:600;">{remaining_mw:.1f} MWth available</span>
+          </div>
+        </div>""",
         unsafe_allow_html=True,
     )
 
 
 # =====================================================================
-# DATA GENERATION (cached per mine + tamper settings for this session)
+# 9. DATA HELPERS
 # =====================================================================
 def get_telemetry(mine_name: str) -> pd.DataFrame:
-    cache_key = (mine_name, st.session_state.tamper_active, st.session_state.tamper_mode)
-    if cache_key not in st.session_state.telemetry_cache:
-        df = simulator.simulate_mine_telemetry(
+    key = (mine_name, st.session_state.tamper_active, st.session_state.tamper_mode)
+    if key not in st.session_state.telemetry_cache:
+        st.session_state.telemetry_cache[key] = simulator.simulate_mine_telemetry(
             mine_name=mine_name,
             num_samples=180,
             inject_physics_mismatch=st.session_state.tamper_active,
             tamper_mode=st.session_state.tamper_mode,
         )
-        st.session_state.telemetry_cache[cache_key] = df
-    return st.session_state.telemetry_cache[cache_key]
+    return st.session_state.telemetry_cache[key]
 
 
 def build_zone_summaries(df: pd.DataFrame) -> list:
     summaries = []
     for zone in df["zone"].unique():
-        zone_df = df[df["zone"] == zone].sort_values("timestamp")
-        result = anomaly.process_telemetry_stream(
-            reported_temps=zone_df["reported_temp_c"].tolist(),
-            predicted_temps=zone_df["predicted_temp_c"].tolist(),
-            wet_bulb_temps=zone_df["wet_bulb_c"].tolist(),
-            worker_counts=zone_df["zone_occupancy_count"].tolist(),
+        zdf = df[df["zone"] == zone].sort_values("timestamp")
+        summaries.append(anomaly.process_telemetry_stream(
+            reported_temps=zdf["reported_temp_c"].tolist(),
+            predicted_temps=zdf["predicted_temp_c"].tolist(),
+            wet_bulb_temps=zdf["wet_bulb_c"].tolist(),
+            worker_counts=zdf["zone_occupancy_count"].tolist(),
             zone_name=zone,
-        )
-        summaries.append(result)
+        ))
     summaries.sort(key=lambda r: r["composite_risk_score"], reverse=True)
     return summaries
 
 
 # =====================================================================
-# SCREEN 1: UNDERGROUND ENGINE
+# 10. SCREEN — UNDERGROUND ENGINE  (Manager + Operator)
 # =====================================================================
 def render_underground_engine(selected_mine: str) -> None:
-    st.subheader("Underground Engine — Predictive Safety & Security")
+    screen_heading("🔻", "Underground Engine", "Predictive Safety", "tt-badge-orange")
     st.caption(
-        f"Predicts a dangerous heat spike ~{config.PREDICTION_LEAD_TIME_MINUTES} minutes ahead of time, "
-        "and doubles as a tamper-detection layer using the same physics baseline."
+        f"Predicts a dangerous heat spike ~{config.PREDICTION_LEAD_TIME_MINUTES} min "
+        "ahead and doubles as a tamper-detection layer using the same physics baseline."
     )
 
     ctrl_col, info_col = st.columns([1, 2])
@@ -714,9 +1260,9 @@ def render_underground_engine(selected_mine: str) -> None:
             [config.SIGNATURE_JUMP, config.SIGNATURE_DRIFT],
             index=0 if st.session_state.tamper_mode == config.SIGNATURE_JUMP else 1,
             horizontal=True,
-            help="JUMP = sudden spoofing step. DRIFT = gradual sensor wear/calibration decay.",
+            help="JUMP = sudden step. DRIFT = gradual calibration decay.",
         )
-        if st.button("Regenerate telemetry"):
+        if st.button("🔄 Regenerate telemetry"):
             st.session_state.telemetry_cache = {}
             st.rerun()
 
@@ -726,134 +1272,112 @@ def render_underground_engine(selected_mine: str) -> None:
     with info_col:
         top = summaries[0]
         if top["priority"].startswith("Priority 1"):
-            st.error(f"ALERT: {top['zone']}: {top['priority']} — {top['recommended_action']}")
+            st.error(f"🚨 **CRITICAL** — {top['zone']}: {top['recommended_action']}")
         elif top["priority"].startswith("Priority 2"):
-            st.warning(f"WARNING: {top['zone']}: {top['priority']} — {top['recommended_action']}")
+            st.warning(f"⚠️ **HIGH** — {top['zone']}: {top['recommended_action']}")
         else:
-            st.success(f"All zones nominal. Highest priority: {top['zone']} ({top['priority']}).")
+            st.success(f"✅ **All zones nominal** — Highest: {top['zone']} ({top['priority']})")
 
     zone_names = [s["zone"] for s in summaries]
-    focus_zone = st.selectbox("Zone detail", zone_names, index=0)
+    focus_zone = st.selectbox("Zone detail", zone_names)
     zone_df = df[df["zone"] == focus_zone].sort_values("timestamp").set_index("timestamp")
     st.line_chart(zone_df[["reported_temp_c", "predicted_temp_c"]])
 
-    st.markdown("**Worker-Risk Ranking** (anonymous occupancy only — see Data Privacy note below)")
-    ranking_table = pd.DataFrame(
-        [
-            {
-                "Rank": i + 1,
-                "Zone": s["zone"],
-                "Priority": s["priority"],
-                "Risk Score": s["composite_risk_score"],
-                "Wet-Bulb °C": s["latest_wet_bulb_c"],
-                "Signature": s["latest_signature"],
-                "Anonymous Workers": s["worker_count"],
-            }
-            for i, s in enumerate(summaries)
-        ]
+    st.markdown("**Worker-Risk Ranking** *(anonymous occupancy only)*")
+    st.dataframe(
+        pd.DataFrame([{
+            "Rank": i + 1, "Zone": s["zone"], "Priority": s["priority"],
+            "Risk Score": s["composite_risk_score"], "Wet-Bulb °C": s["latest_wet_bulb_c"],
+            "Signature": s["latest_signature"], "Workers": s["worker_count"],
+        } for i, s in enumerate(summaries)]),
+        use_container_width=True, hide_index=True,
     )
-    st.dataframe(ranking_table, use_container_width=True, hide_index=True)
 
-    with st.expander("Data Privacy — how worker counts are produced"):
-        sample_ids = [f"{focus_zone.replace(' ', '').upper()}-{i}" for i in range(6)]
-        hashed = privacy.hash_worker_ids(sample_ids)
-        st.write("Raw badge IDs never leave the sensor layer. Example (illustrative only):")
-        st.code(f"Raw: {sample_ids}\nHashed: {hashed}\nCount: {privacy.zone_occupancy_density(hashed)}")
-        st.caption("No PII is stored or transmitted — only a de-duplicated hashed occupancy count, per the POPIA note in the pitch pack.")
+    with st.expander("🔒 Data Privacy — how worker counts are produced"):
+        ids = [f"{focus_zone.replace(' ','').upper()}-{i}" for i in range(6)]
+        hashed = privacy.hash_worker_ids(ids)
+        st.code(f"Raw: {ids}\nHashed: {hashed}\nCount: {privacy.zone_occupancy_density(hashed)}")
+        st.caption("No PII stored or transmitted — POPIA-compliant hashed occupancy count only.")
 
 
 # =====================================================================
-# SCREEN 2: COMMERCIAL DOOR
+# 11. SCREEN — COMMERCIAL DOOR  (Manager only)
 # =====================================================================
 def render_commercial_door(selected_mine: str) -> None:
-    st.subheader("Commercial Door — Thermal Power Purchase Agreement (tPPA)")
+    screen_heading("🏭", "Commercial Door", "Thermal tPPA", "tt-badge-teal")
     mine_cfg = config.get_mine_config(selected_mine)
     cfg = config.COMMERCIAL_DOOR_CONFIG
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Fence-line Capacity", f"{mine_cfg['available_heat_capacity_mw']:.1f} MWth")
     c2.metric("Tariff Discount", f"{cfg['default_discount_percent']:.0f}% below Eskom")
-    c3.metric("Mandatory Local Hiring Quota", f"{cfg['mandatory_local_hiring_quota']:.0f}%")
+    c3.metric("Local Hiring Quota", f"{cfg['mandatory_local_hiring_quota']:.0f}%")
     st.caption(cfg["tppa_summary"])
 
     max_mw = float(mine_cfg["available_heat_capacity_mw"])
-    requested_mw = st.slider("Heat capacity you'd like to secure (MWth)", 0.5, max_mw, min(2.0, max_mw), 0.5)
+    requested_mw = st.slider("Heat capacity to secure (MWth)", 0.5, max_mw, min(2.0, max_mw), 0.5)
     savings = config.calculate_commercial_savings(requested_mw)
-
     s1, s2 = st.columns(2)
-    s1.metric("Your est. annual savings", f"R {savings['annual_offtaker_savings_zar']:,.0f}")
-    s2.metric("Mine's est. annual revenue from this deal", f"R {savings['annual_mine_revenue_zar']:,.0f}")
+    s1.metric("Est. annual offtaker savings", f"R {savings['annual_offtaker_savings_zar']:,.0f}")
+    s2.metric("Est. annual mine revenue", f"R {savings['annual_mine_revenue_zar']:,.0f}")
 
     with st.form("express_interest_form"):
-        st.markdown("**1-Tap Express Interest**")
+        st.markdown("**Express Interest — 1 form**")
         name = st.text_input("Company name")
         contact = st.text_input("Contact email")
-        submitted = st.form_submit_button("Express Interest in tPPA")
-        if submitted:
+        if st.form_submit_button("Submit Expression of Interest →", use_container_width=True):
             if name and contact:
                 st.session_state.commercial_interests.append(
-                    {"company": name, "contact": contact, "heat_mw": requested_mw, "mine": selected_mine}
+                    {"company": name, "contact": contact,
+                     "heat_mw": requested_mw, "mine": selected_mine}
                 )
-                st.success(f"Interest recorded for {requested_mw:.1f} MWth at {selected_mine}. The team will follow up.")
+                st.success(f"Recorded {requested_mw:.1f} MWth interest at {selected_mine}. We'll be in touch.")
             else:
-                st.error("Please provide a company name and contact email.")
+                st.error("Company name and contact email are required.")
 
     if st.session_state.commercial_interests:
-        with st.expander(f"Express Interest submissions ({len(st.session_state.commercial_interests)})"):
-            st.dataframe(pd.DataFrame(st.session_state.commercial_interests), use_container_width=True, hide_index=True)
+        with st.expander(f"📋 Submissions ({len(st.session_state.commercial_interests)})"):
+            st.dataframe(pd.DataFrame(st.session_state.commercial_interests),
+                         use_container_width=True, hide_index=True)
 
 
 # =====================================================================
-# SCREEN 3: COMMUNITY DOOR — stepped flow for low-literacy users
+# 12. SCREEN — COMMUNITY DOOR  (stepped, accessible, all community users)
 # =====================================================================
-
-def _render_language_selector() -> None:
-    """Compact language pill switcher at the top of the Community Door."""
+def _render_lang_selector() -> None:
     cols = st.columns(4)
     for i, lang in enumerate(["English", "isiZulu", "Setswana", "Afrikaans"]):
         with cols[i]:
             active = st.session_state.cd_language == lang
-            label = f"**{lang}**" if active else lang
-            if st.button(label, key=f"lang_btn_{lang}", use_container_width=True):
+            if st.button(f"**{lang}**" if active else lang,
+                         key=f"lang_{lang}", use_container_width=True):
                 st.session_state.cd_language = lang
                 st.rerun()
 
 
 def _cd_step_pick() -> None:
-    """
-    Step 1 — One decision: which opportunity?
-    Large icon cards. One tap → advance to detail view.
-    No description text yet — icons carry the meaning first.
-    """
     st.markdown(f"### {t('step1_heading')}")
     st.caption(t("step1_subtext"))
-    listen_button(t("step1_heading") + ". " + t("step1_subtext"), key="listen_step1")
+    listen_button(t("step1_heading") + ". " + t("step1_subtext"), key="ls1")
 
     cards = config.get_community_cards()
-    col_pairs = [cards[i:i+2] for i in range(0, len(cards), 2)]
-
-    for pair in col_pairs:
+    for pair in [cards[i:i+2] for i in range(0, len(cards), 2)]:
         cols = st.columns(len(pair))
         for col, card in zip(cols, pair):
-            meta = CARD_META.get(card["id"], {"icon": "🌿", "color": "#59C97A"})
+            meta = CARD_META.get(card["id"], {"icon": "🌿", "color": "#16A34A",
+                                              "bg": "#F0FDF4", "border": "#BBF7D0"})
             with col:
-                # Render the visual card
                 st.markdown(
-                    f"""
-                    <div class="cd-pick-card" style="border-color:{meta['color']}22;">
+                    f"""<div class="cd-pick-card"
+                      style="border-color:{meta['border']};background:{meta['bg']};">
                       <div class="cd-pick-icon">{meta['icon']}</div>
                       <div class="cd-pick-label">{card['title']}</div>
                       <div class="cd-pick-sublabel">{card_benefit(card['id'])}</div>
-                    </div>
-                    """,
+                    </div>""",
                     unsafe_allow_html=True,
                 )
-                # Actual Streamlit button for interactivity underneath the visual
-                if st.button(
-                    f"{meta['icon']} {card['title']}",
-                    key=f"pick_{card['id']}",
-                    use_container_width=True,
-                ):
+                if st.button(f"{meta['icon']} {card['title']}",
+                             key=f"pick_{card['id']}", use_container_width=True):
                     st.session_state.cd_selected_card_id = card["id"]
                     st.session_state.cd_step = "detail"
                     st.rerun()
@@ -864,71 +1388,56 @@ def _cd_step_pick() -> None:
 
 
 def _cd_step_detail() -> None:
-    """
-    Step 2 — One decision: apply or go back.
-    Full card details + before/after visual bars. One big apply button.
-    """
     card_id = st.session_state.cd_selected_card_id
     cards = {c["id"]: c for c in config.get_community_cards()}
     card = cards.get(card_id)
     if not card:
-        st.session_state.cd_step = "pick"
-        st.rerun()
-        return
+        st.session_state.cd_step = "pick"; st.rerun(); return
 
-    meta = CARD_META.get(card_id, {"icon": "🌿", "color": "#59C97A"})
+    meta = CARD_META.get(card_id, {"icon": "🌿", "color": "#16A34A",
+                                   "bg": "#F0FDF4", "border": "#BBF7D0"})
     mine_total_mw = config.get_mine_config(config.DEFAULT_MINE)["available_heat_capacity_mw"]
 
-    # ---- Back button ----
-    if st.button(t("step2_back"), key="cd_back_btn"):
-        st.session_state.cd_step = "pick"
-        st.rerun()
+    if st.button(t("step2_back"), key="cd_back"):
+        st.session_state.cd_step = "pick"; st.rerun()
 
-    # ---- Card header ----
     st.markdown(
-        f"""
-        <div style="text-align:center;padding:20px 0 10px 0;">
-          <div style="font-size:4rem;">{meta['icon']}</div>
-          <div style="font-family:'Oswald',sans-serif;font-size:1.6rem;color:{meta['color']};margin-top:8px;">
-            {card['title']}
-          </div>
-        </div>
-        """,
+        f"""<div style="text-align:center;padding:20px 0 12px;
+          background:{meta['bg']};border-radius:14px;margin-bottom:16px;
+          border:1px solid {meta['border']};">
+          <div style="font-size:3.8rem;">{meta['icon']}</div>
+          <div style="font-family:'Space Grotesk',sans-serif;font-size:1.5rem;
+            font-weight:800;color:{meta['color']};margin-top:8px;">{card['title']}</div>
+        </div>""",
         unsafe_allow_html=True,
     )
-    listen_button(card["title"] + ". " + card["description"], key=f"listen_detail_{card_id}")
-
-    # ---- Description ----
+    listen_button(card["title"] + ". " + card["description"], key=f"ld_{card_id}")
     st.write(card["description"])
 
-    # ---- Numbers as pictures ----
     col_l, col_r = st.columns(2)
     with col_l:
-        jobs_bar(t("label_jobs"), card["jobs_created"], meta["color"])
+        jobs_bar(card["jobs_created"], meta["color"])
     with col_r:
         heat_bar(card["allocated_mw"], mine_total_mw, meta["color"])
 
-    # ---- Focus & SLP ----
     st.markdown(
-        f"""
-        <div style="display:flex;gap:16px;flex-wrap:wrap;margin:10px 0 16px 0;font-size:0.9rem;">
-          <div><span style="color:#8FA0A8;">{t('label_focus')} </span>{card['focus_group']}</div>
-          <div><span style="color:#8FA0A8;">{t('label_slp')} </span>{card['slp_metric']}</div>
-          <div><span style="color:#8FA0A8;">{t('label_temp')} </span>{card['water_temp_c']}</div>
-        </div>
-        """,
+        f"""<div style="display:flex;gap:14px;flex-wrap:wrap;margin:12px 0 18px;
+          font-size:0.88rem;padding:12px 16px;background:{meta['bg']};
+          border-radius:10px;border:1px solid {meta['border']};">
+          <div><span style="color:#94A3B8;">{t('label_focus')} </span>
+               <strong>{card['focus_group']}</strong></div>
+          <div><span style="color:#94A3B8;">{t('label_slp')} </span>
+               <strong>{card['slp_metric']}</strong></div>
+          <div><span style="color:#94A3B8;">{t('label_temp')} </span>
+               <strong>{card['water_temp_c']}</strong></div>
+        </div>""",
         unsafe_allow_html=True,
     )
 
-    # ---- Apply form — one input, one big button ----
-    with st.form(f"cd_apply_form_{card_id}"):
-        applicant = st.text_input(
-            t("name_label"),
-            placeholder=t("name_placeholder"),
-            value=st.session_state.cd_applicant_name,
-        )
-        submitted = st.form_submit_button(t("step2_apply"), use_container_width=True)
-        if submitted:
+    with st.form(f"apply_{card_id}"):
+        applicant = st.text_input(t("name_label"), placeholder=t("name_placeholder"),
+                                  value=st.session_state.cd_applicant_name)
+        if st.form_submit_button(t("step2_apply"), use_container_width=True):
             if applicant.strip():
                 st.session_state.cd_applicant_name = applicant.strip()
                 st.session_state.community_applications.append(
@@ -945,31 +1454,22 @@ def _cd_step_detail() -> None:
 
 
 def _cd_step_done() -> None:
-    """
-    Step 3 — Confirmation. Nothing to decide. Just reassurance + next action.
-    """
     card_id = st.session_state.cd_selected_card_id
-    cards = {c["id"]: c for c in config.get_community_cards()}
-    card = cards.get(card_id, {})
+    card = {c["id"]: c for c in config.get_community_cards()}.get(card_id, {})
     meta = CARD_META.get(card_id, {"icon": "🌿"})
 
     st.markdown(
-        f"""
-        <div class="cd-success-box">
+        f"""<div class="cd-success-box">
           <div class="cd-success-icon">{meta['icon']} ✅</div>
           <div class="cd-success-heading">{t('step3_heading')}</div>
-          <div style="font-size:1.1rem;color:#E8ECEE;margin:8px 0 4px 0;">
-            {card.get('title', '')}
-          </div>
+          <div style="font-size:1.05rem;color:#0F172A;margin:8px 0 4px;">
+            {card.get('title','')}</div>
           <div class="cd-success-sub">
-            {st.session_state.cd_applicant_name} · {t('step3_subtext')}
-          </div>
-        </div>
-        """,
+            {st.session_state.cd_applicant_name} · {t('step3_subtext')}</div>
+        </div>""",
         unsafe_allow_html=True,
     )
-
-    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
     whatsapp_strip()
 
     if st.button(t("step3_another"), use_container_width=True):
@@ -979,34 +1479,33 @@ def _cd_step_done() -> None:
         st.rerun()
 
     if st.session_state.community_applications:
-        with st.expander(f"📋 Applications received ({len(st.session_state.community_applications)})"):
-            st.dataframe(
-                pd.DataFrame(st.session_state.community_applications),
-                use_container_width=True,
-                hide_index=True,
-            )
+        with st.expander(f"📋 Applications ({len(st.session_state.community_applications)})"):
+            st.dataframe(pd.DataFrame(st.session_state.community_applications),
+                         use_container_width=True, hide_index=True)
 
 
 def render_community_door() -> None:
-    """
-    Community Door — redesigned for low-literacy, multilingual, low-resource users.
-
-    UX principles applied:
-    - Language first: isiZulu / Setswana / Afrikaans / English switcher at top
-    - Icons before words: large emoji icons lead every option
-    - One decision per screen: stepped flow (pick → detail → done)
-    - Numbers as pictures: before/after bar charts instead of raw numbers
-    - Human fallback: WhatsApp contact visible on every screen
-    - Voice-first: 🔊 Listen button reads key text aloud using Web Speech API
-    - Weak signal: no heavy images, no autoplay, minimal DOM weight
-    """
-    st.subheader(t("community_tab_title"))
+    screen_heading("🌱", "Community Door", "Opportunities", "tt-badge-green")
     st.caption(t("community_intro"))
-
-    # Language selector — always at top, always visible
-    _render_language_selector()
+    _render_lang_selector()
 
     step = st.session_state.get("cd_step", "pick")
+    s1 = "active" if step == "pick" else "done"
+    s2 = "active" if step == "detail" else ("done" if step == "done" else "idle")
+    s3 = "active" if step == "done" else "idle"
+    l1 = "done" if step in ("detail", "done") else ""
+    l2 = "done" if step == "done" else ""
+    st.markdown(
+        f"""<div class="cd-step-indicator">
+          <div class="cd-step-dot {s1}">1</div>
+          <div class="cd-step-line {l1}"></div>
+          <div class="cd-step-dot {s2}">2</div>
+          <div class="cd-step-line {l2}"></div>
+          <div class="cd-step-dot {s3}">✓</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
     if step == "pick":
         _cd_step_pick()
     elif step == "detail":
@@ -1014,63 +1513,93 @@ def render_community_door() -> None:
     elif step == "done":
         _cd_step_done()
     else:
-        st.session_state.cd_step = "pick"
-        st.rerun()
+        st.session_state.cd_step = "pick"; st.rerun()
 
 
 # =====================================================================
-# SCREEN 4: ICP / ABOUT
+# 13. SCREEN — ABOUT
 # =====================================================================
 def render_about() -> None:
-    st.subheader("About ThermalTwin (MineFlow AI)")
+    screen_heading("ℹ️", "About ThermalTwin", "MineFlow AI", "tt-badge-teal")
     st.markdown(
         """
-Deep gold mines spend heavily to fight naturally hot rock underground; a few hundred metres away,
-Merafong households often can't afford to use the power they're connected to. ThermalTwin sits
-between the two:
+Deep gold mines spend heavily fighting naturally hot rock; a few hundred metres away,
+Merafong households often can't afford to use the power they're connected to.
+ThermalTwin sits between the two:
 
-- **Underground Engine** — predicts dangerous heat 25–30 minutes ahead, and its physics baseline
-  doubles as a tamper-detection layer (a sensor claiming "cold" when physics says "hot" is itself the alarm).
-- **Surface Engine** — captures heat already being pumped to surface for cooling and routes it to
-  businesses (Commercial Door) or community incubation projects (Community Door) when no
-  business takes the deal, with only heat — never mine water — ever leaving the fence line.
+- **Underground Engine** — predicts dangerous heat 25–30 min ahead; the same physics
+  baseline doubles as a tamper-detection layer.
+- **Surface Engine** — routes heat already pumped to surface toward businesses
+  (Commercial Door / tPPA) or community incubation projects (Community Door / SLP).
         """
     )
-    with st.expander("Honest caveats (say these out loud if asked)"):
+    with st.expander("💬 Honest caveats"):
         st.markdown(
             """
-- This demo runs on **simulated telemetry**, not a trained ML model — the "predicted" baseline is a scripted
-  physics stand-in deliberately offset from the "reported" value to demonstrate the concept.
-- Phase 1 targets "cold water" mines (Driefontein, South Deep, Kusasalethu, Kloof); Phase 2 (Mponeng,
-  TauTona) needs a different heat-exchanger design suited to melted ice-brine, not chilled water.
-- The competitive claim that established OT-security vendors underserve mid-tier SA mines is our belief,
-  not yet confirmed with an industry source.
+- Telemetry is **simulated** — the "predicted" baseline is scripted physics, not a trained ML model.
+- Phase 1 (chilled water mines); Phase 2 (Mponeng, TauTona) needs ice-brine heat-exchanger design.
+- The claim about OT-security vendors under-serving mid-tier SA mines is unverified.
             """
         )
 
 
 # =====================================================================
-# MAIN
+# 14. MAIN — role-gated routing
 # =====================================================================
 def main() -> None:
     inject_theme()
-    render_staging_banner()
-    st.title("ThermalTwin — MineFlow AI")
 
-    phase1_mines = config.get_mines_by_phase(1)
-    selected_mine = st.sidebar.selectbox(
-        "Active mine (Phase 1 demo)", phase1_mines, index=phase1_mines.index(config.DEFAULT_MINE)
+    # ---- Gate: show auth screen if not logged in ----
+    if not st.session_state.authenticated:
+        render_auth()
+        return
+
+    # ---- Logged-in: render sidebar & get selected mine ----
+    selected_mine = render_sidebar()
+
+    u = st.session_state.user
+    role = u["role"]
+
+    # ---- App header ----
+    st.markdown(
+        f"""<div style="margin-bottom:20px;">
+          <div style="font-family:'Space Grotesk',sans-serif;font-size:2rem;
+            font-weight:800;color:#0F172A;letter-spacing:-0.025em;">
+            🌡️ ThermalTwin
+          </div>
+          <div style="font-size:0.9rem;color:#475569;margin-top:2px;">
+            MineFlow AI &nbsp;·&nbsp; Mine heat, redirected to the community
+          </div>
+        </div>""",
+        unsafe_allow_html=True,
     )
-    st.sidebar.caption(config.get_mine_config(selected_mine)["location"])
-    st.sidebar.markdown("---")
-    st.sidebar.caption("No login. No backend. All data for this demo lives in your browser session only.")
 
+    # ---- COMMUNITY MEMBER: single screen, no mine metrics ----
+    if role == "community":
+        render_community_door()
+        return
+
+    # ---- MINING roles: staging banner + status header ----
+    render_staging_banner()
     render_status_header(selected_mine)
     st.markdown("---")
 
-    tab1, tab2, tab3, tab4 = st.tabs(
-        ["🔻 Underground Engine", "🏭 Commercial Door", t("community_tab_title"), "ℹ️ About"]
-    )
+    # ---- OPERATOR: Underground + About only ----
+    if role == "operator":
+        tab1, tab2 = st.tabs(["🔻 Underground Engine", "ℹ️ About"])
+        with tab1:
+            render_underground_engine(selected_mine)
+        with tab2:
+            render_about()
+        return
+
+    # ---- MANAGER: all four tabs ----
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "🔻 Underground Engine",
+        "🏭 Commercial Door",
+        "🌱 Community Door",
+        "ℹ️ About",
+    ])
     with tab1:
         render_underground_engine(selected_mine)
     with tab2:
