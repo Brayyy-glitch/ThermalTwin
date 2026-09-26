@@ -74,17 +74,52 @@ picks up live inside the running container (no rebuild needed); only changing
 `requirements.txt` requires a `docker compose up --build` re-run. See
 `TEAM_AND_STACK.md` for the full Docker/CI setup.
 
+## Access & credentials
+
+The dashboard uses a role-based entry screen. Two paths are available:
+
+| Role | Entry | Credentials |
+|---|---|---|
+| Community member | "I am with the community" | No login required |
+| Mine operator / manager | "I am with the mine" | See below |
+
+**Demo operator credentials (hardcoded for demo — change before production):**
+
+| Field | Value |
+|---|---|
+| Username | `operator` |
+| Password | `thermaltwin2026` |
+
+Credentials are checked by comparing a SHA-256 hash of the entered password against a hardcoded
+hash in `app.py`. To change them, update `_OPERATOR_USERNAME` and re-hash a new password:
+
+```python
+import hashlib
+print(hashlib.sha256("your_new_password".encode()).hexdigest())
+```
+
+Replace `_OPERATOR_PASSWORD_HASH` in `app.py` with the output.
+
+**Community form URLs** are placeholders stored in the `COMMUNITY_FORM_URLS` dict near the top of
+`app.py`. Replace each `https://forms.google.com/PLACEHOLDER_*` value with the live Google or
+Microsoft Forms URL before going live.
+
 ## Demo script (~3 minutes)
 
-1. **Baseline** — open the dashboard, show the Phase 1/Phase 2 staging banner, pick a mine from the
-   sidebar (note the numbers actually change per mine — this isn't cosmetic).
-2. **Inject the tamper event** — toggle "Inject Physics Mismatch," watch Zone 2's predicted-vs-reported
-   chart diverge and the alert fire, tagged `JUMP` and ranked by worker occupancy.
-3. **Show the Z-score expander** — the statistical layer behind the alert.
-4. **Show the Data Privacy expander** — raw fake worker IDs going in, hashed tags coming out.
-5. **Surface Engine Portal** — adjust the sidebar heat/tariff inputs, then scroll to the
-   Commercial Door / Community Door tabs and show the shared "Available Thermal Output vs.
-   Allocated Community Hubs" header — the live, two-sided proof of SLP value.
+1. **Landing** — open `http://localhost:8501`, show the two role cards.
+2. **Community path** — click "I am with the community", walk through the four opportunity cards,
+   show that each Apply button links to the external form (placeholder URLs until live forms are set).
+3. **Operator path** — go back, click "I am with the mine", sign in with `operator` / `thermaltwin2026`.
+4. **Zone status** — on the Underground Engine tab, show all zones green (stable). Pick a mine from
+   the sidebar and note the numbers change per mine.
+5. **Inject tamper** — open "Demo controls", toggle "Inject sensor tampering", click Refresh.
+   Watch the top banner turn red/amber, the zone table update, and the recommended action appear.
+6. **Human fallback** — show that the action is not taken automatically. Click the confirm button
+   to demonstrate the human-in-the-loop step.
+7. **Commercial Door** — adjust the heat capacity slider, show the live savings/revenue figures,
+   and submit an expression of interest.
+8. **Status header** — point to the "Available Thermal Output vs Allocated Community Hubs" gauge
+   always visible at the top — the live proof of SLP value.
 
 ## What's simulated vs. real, stated plainly
 
